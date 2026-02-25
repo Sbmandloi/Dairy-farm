@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Customer {
+  id            String   @id @default(cuid())
+  name          String
+  phoneNumber   String   @map("phone_number")
+  address       String?
+  pricePerLiter Decimal? @map("price_per_liter") @db.Decimal(10, 2)
+  isActive      Boolean  @default(true) @map("is_active")
+  startDate     DateTime @map("start_date") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  dailyEntries DailyMilkEntry[]
+  bills        Bill[]
+
+  @@index([isActive])
+  @@index([phoneNumber])
+  @@map("customers")
+}
+
+model DailyMilkEntry {
+  id            String   @id @default(cuid())
+  customerId    String   @map("customer_id")
+  date          DateTime @db.Date
+  morningLiters Decimal? @map("morning_liters") @db.Decimal(10, 2)
+  eveningLiters Decimal? @map("evening_liters") @db.Decimal(10, 2)
+  totalLiters   Decimal  @map("total_liters") @db.Decimal(10, 2)
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([customerId, date])
+  @@index([date])
+  @@index([customerId, date])
+  @@map("daily_milk_entries")
+}
+
+model Bill {
+  id            String     @id @default(cuid())
+  customerId    String     @map("customer_id")
+  periodStart   DateTime   @map("period_start") @db.Date
+  periodEnd     DateTime   @map("period_end") @db.Date
+  totalLiters   Decimal    @map("total_liters") @db.Decimal(10, 2)
+  pricePerLiter Decimal    @map("price_per_liter") @db.Decimal(10, 2)
+  totalAmount   Decimal    @map("total_amount") @db.Decimal(10, 2)
+  invoiceNumber String     @unique @map("invoice_number")
+  status        BillStatus @default(GENERATED)
+  pdfPath       String?    @map("pdf_path")
+  whatsappMsgId String?    @map("whatsapp_msg_id")
+  sentAt        DateTime?  @map("sent_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  customer Customer  @relation(fields: [customerId], references: [id])
+  payments Payment[]
+
+  @@unique([customerId, periodStart, periodEnd])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+  @@map("bills")
+}
+
+model Payment {
+  id         String   @id @default(cuid())
+  billId     String   @map("bill_id")
+  amountPaid Decimal  @map("amount_paid") @db.Decimal(10, 2)
+  paidOn     DateTime @map("paid_on") @db.Date
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  bill Bill @relation(fields: [billId], references: [id])
+
+  @@map("payments")
+}
+
+model Settings {
+  id                     String   @id @default("default")
+  globalPricePerLiter    Decimal  @map("global_price_per_liter") @db.Decimal(10, 2)
+  billingCycleType       String   @default("MONTHLY") @map("billing_cycle_type")
+  farmName               String   @map("farm_name")
+  farmAddress            String?  @map("farm_address")
+  farmPhone              String?  @map("farm_phone")
+  entryMode              String   @default("SPLIT") @map("entry_mode")
+  whatsappBusinessAcctId String?  @map("whatsapp_business_acct_id")
+  whatsappPhoneNumberId  String?  @map("whatsapp_phone_number_id")
+  whatsappAccessToken    String?  @map("whatsapp_access_token")
+  whatsappTemplateName   String?  @map("whatsapp_template_name")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+enum BillStatus {
+  GENERATED
+  SENT
+  PAID
+  PARTIALLY_PAID
+}
