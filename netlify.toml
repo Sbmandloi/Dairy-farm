@@ -5,9 +5,8 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# Increase function timeout for PDF generation + DB queries
-[functions]
-  node_bundler = "esbuild"
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
 [[headers]]
   for = "/*"
