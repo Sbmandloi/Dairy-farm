@@ -3,6 +3,7 @@ import type { NextAuthConfig } from "next-auth";
 // Edge-safe auth config — no bcryptjs, no prisma.
 // Used by middleware (Edge Function) for JWT session checks only.
 export const authConfig: NextAuthConfig = {
+  trustHost: true,
   pages: {
     signIn: "/login",
   },
