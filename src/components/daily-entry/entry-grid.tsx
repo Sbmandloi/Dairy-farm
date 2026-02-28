@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchBar } from "@/components/ui/search-bar";
 import { saveDailyEntriesAction, copyPreviousDayAction } from "@/lib/actions/daily-entry.actions";
 import { Loader2, Save, Copy, CheckCircle } from "lucide-react";
 
@@ -110,6 +111,7 @@ export function EntryGrid({ date, rows, entryMode }: EntryGridProps) {
   const [copying, setCopying] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Whenever rowUnits changes, persist to localStorage
   useEffect(() => {
@@ -252,8 +254,27 @@ export function EntryGrid({ date, rows, entryMode }: EntryGridProps) {
 
   const mlCount = Object.values(rowUnits).filter((u) => u === "ml").length;
 
+  const visibleRows = searchQuery
+    ? rows.filter((r) =>
+        r.customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.customer.phoneNumber.includes(searchQuery)
+      )
+    : rows;
+
   return (
     <div className="space-y-4">
+      {/* Search bar */}
+      <SearchBar
+        placeholder="Filter customer by name or phone…"
+        onSearch={setSearchQuery}
+        className="max-w-md"
+      />
+      {searchQuery && (
+        <p className="text-xs text-gray-500">
+          Showing {visibleRows.length} of {rows.length} customers
+        </p>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3 flex-wrap">
@@ -329,7 +350,7 @@ export function EntryGrid({ date, rows, entryMode }: EntryGridProps) {
         </div>
 
         {/* Rows */}
-        {rows.map(({ customer }) => {
+        {visibleRows.map(({ customer }) => {
           const unit = rowUnits[customer.id] ?? "L";
           const isML = unit === "ml";
           const displayRow = getDisplayRow(customer.id);
@@ -491,6 +512,11 @@ export function EntryGrid({ date, rows, entryMode }: EntryGridProps) {
         {rows.length === 0 && (
           <div className="text-center py-12 text-gray-400">
             No active customers. Add customers first.
+          </div>
+        )}
+        {rows.length > 0 && visibleRows.length === 0 && (
+          <div className="text-center py-12 text-gray-400">
+            No customers match &ldquo;{searchQuery}&rdquo;
           </div>
         )}
       </div>

@@ -89,3 +89,23 @@ export async function getEntriesForPeriod(customerId: string, start: Date, end: 
     orderBy: { date: "asc" },
   });
 }
+
+export async function getMonthlyEntries(year: number, month: number) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const start = new Date(`${year}-${pad(month)}-01`);
+  const end = new Date(`${year}-${pad(month)}-${pad(daysInMonth)}`);
+
+  const [customers, entries] = await Promise.all([
+    prisma.customer.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.dailyMilkEntry.findMany({
+      where: { date: { gte: start, lte: end } },
+      orderBy: { date: "asc" },
+    }),
+  ]);
+
+  return { customers, entries, daysInMonth };
+}

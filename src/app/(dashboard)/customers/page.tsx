@@ -3,10 +3,26 @@ import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { Plus, Phone, MapPin, IndianRupee, Droplets, TrendingUp, Users, AlertCircle } from "lucide-react";
+import { Plus, Phone, MapPin, IndianRupee, Droplets, TrendingUp, Users, AlertCircle, Search, X } from "lucide-react";
 import { formatCurrency, formatDate, decimalToNumber } from "@/lib/utils/format";
 import { CustomerToggleButton } from "@/components/customers/customer-status-badge";
+import { DeleteCustomerButton } from "@/components/customers/delete-customer-button";
 import { ExportButton } from "@/components/customers/export-button";
+
+function avatarColor(name: string) {
+  const colors = [
+    "bg-blue-500", "bg-emerald-500", "bg-violet-500",
+    "bg-orange-500", "bg-rose-500", "bg-teal-500",
+    "bg-indigo-500", "bg-amber-500",
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function getInitials(name: string) {
+  return name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+}
 
 interface PageProps {
   searchParams: Promise<{ search?: string; status?: string }>;
@@ -108,15 +124,39 @@ export default async function CustomersPage({ searchParams }: PageProps) {
         </div>
 
         {/* Search */}
-        <form method="GET" action="/customers">
+        <form method="GET" action="/customers" className="flex gap-2 max-w-md">
           <input type="hidden" name="status" value={status || ""} />
-          <input
-            name="search"
-            defaultValue={search}
-            placeholder="Search by name or phone..."
-            className="flex h-9 w-full max-w-sm rounded-md border border-gray-200 bg-white px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 transition-shadow"
-          />
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <input
+              name="search"
+              defaultValue={search}
+              placeholder="Search by name or phone..."
+              className="pl-9 pr-8 h-9 w-full rounded-md border border-gray-200 bg-white text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 transition-shadow"
+            />
+            {search && (
+              <Link
+                href={`/customers?status=${status || ""}&search=`}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </Link>
+            )}
+          </div>
+          <Button type="submit" size="sm">
+            <Search className="w-4 h-4" />
+            Search
+          </Button>
         </form>
+
+        {search && (
+          <p className="text-xs text-blue-600">
+            Showing {customers.length} result{customers.length !== 1 ? "s" : ""} for &ldquo;{search}&rdquo; &mdash;{" "}
+            <Link href={`/customers?status=${status || ""}`} className="underline hover:no-underline">
+              Clear
+            </Link>
+          </p>
+        )}
 
         {/* Customer grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -126,8 +166,12 @@ export default async function CustomersPage({ searchParams }: PageProps) {
               className="group bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-blue-200 transition-all duration-200"
             >
               {/* Header */}
-              <div className="flex items-start justify-between mb-3">
-                <div>
+              <div className="flex items-start gap-3 mb-3">
+                {/* Avatar */}
+                <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center ${avatarColor(c.name)} shadow-sm`}>
+                  <span className="text-sm font-bold text-white">{getInitials(c.name)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
                   <Link
                     href={`/customers/${c.id}`}
                     className="font-semibold text-gray-900 hover:text-blue-600 transition-colors text-base leading-tight"
@@ -203,10 +247,11 @@ export default async function CustomersPage({ searchParams }: PageProps) {
                     View
                   </Button>
                 </Link>
-                <Link href={`/customers/${c.id}/edit`} className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full">Edit</Button>
+                <Link href={`/customers/${c.id}/edit`}>
+                  <Button variant="outline" size="sm">Edit</Button>
                 </Link>
                 <CustomerToggleButton customerId={c.id} isActive={c.isActive} />
+                <DeleteCustomerButton customerId={c.id} customerName={c.name} iconOnly />
               </div>
             </div>
           ))}

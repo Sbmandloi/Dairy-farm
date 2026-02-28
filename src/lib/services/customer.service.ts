@@ -111,3 +111,11 @@ export async function toggleCustomerStatus(id: string) {
     data: { isActive: !customer.isActive },
   });
 }
+
+export async function deleteCustomer(id: string) {
+  // Delete all related records first (cascade)
+  await prisma.payment.deleteMany({ where: { bill: { customerId: id } } });
+  await prisma.bill.deleteMany({ where: { customerId: id } });
+  await prisma.dailyMilkEntry.deleteMany({ where: { customerId: id } });
+  return prisma.customer.delete({ where: { id } });
+}

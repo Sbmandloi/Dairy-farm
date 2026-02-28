@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createCustomerSchema, updateCustomerSchema } from "@/lib/schemas/customer.schema";
-import { createCustomer, updateCustomer, toggleCustomerStatus } from "@/lib/services/customer.service";
+import { createCustomer, updateCustomer, toggleCustomerStatus, deleteCustomer } from "@/lib/services/customer.service";
 import { ActionResult } from "@/types";
 
 export async function createCustomerAction(formData: FormData): Promise<ActionResult<void>> {
@@ -68,5 +69,15 @@ export async function toggleCustomerStatusAction(id: string): Promise<ActionResu
     return { success: true, data: undefined };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "Failed to update status" };
+  }
+}
+
+export async function deleteCustomerAction(id: string): Promise<ActionResult<void>> {
+  try {
+    await deleteCustomer(id);
+    revalidatePath("/customers");
+    redirect("/customers");
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to delete customer" };
   }
 }

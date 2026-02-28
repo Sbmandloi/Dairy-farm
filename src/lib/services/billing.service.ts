@@ -133,6 +133,32 @@ export async function updateBillWhatsApp(billId: string, msgId: string) {
   });
 }
 
+export async function createManualBill(data: {
+  customerId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  totalLiters: number;
+  pricePerLiter: number;
+  notes?: string;
+}) {
+  const totalAmount = Math.round(data.totalLiters * data.pricePerLiter * 100) / 100;
+  const invoiceNumber = await generateInvoiceNumber(data.customerId, data.periodStart);
+
+  return prisma.bill.create({
+    data: {
+      customerId: data.customerId,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
+      totalLiters: data.totalLiters,
+      pricePerLiter: data.pricePerLiter,
+      totalAmount,
+      invoiceNumber,
+      status: "GENERATED",
+    },
+    include: { customer: true, payments: true },
+  });
+}
+
 export async function getPendingBills() {
   return prisma.bill.findMany({
     where: { status: { in: ["GENERATED", "SENT", "PARTIALLY_PAID"] } },

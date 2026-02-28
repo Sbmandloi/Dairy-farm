@@ -7,15 +7,20 @@ export async function generateInvoiceNumber(
   const year = periodStart.getFullYear();
   const month = String(periodStart.getMonth() + 1).padStart(2, "0");
 
-  const count = await prisma.bill.count({
-    where: {
-      periodStart: {
-        gte: new Date(year, 0, 1),
-        lt: new Date(year + 1, 0, 1),
-      },
-    },
+  // Find the highest existing invoice number for this year so we never collide
+  const last = await prisma.bill.findFirst({
+    where: { invoiceNumber: { startsWith: `INV-${year}-` } },
+    orderBy: { invoiceNumber: "desc" },
+    select: { invoiceNumber: true },
   });
 
-  const seq = String(count + 1).padStart(3, "0");
-  return `INV-${year}-${month}-${seq}`;
+  let nextSeq = 1;
+  if (last?.invoiceNumber) {
+    // Format: INV-YYYY-MM-NNN — the sequence is always the last segment
+    const parts = last.invoiceNumber.split("-");
+    const lastSeq = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastSeq)) nextSeq = lastSeq + 1;
+  }
+
+  return `INV-${year}-${month}-${String(nextSeq).padStart(3, "0")}`;
 }

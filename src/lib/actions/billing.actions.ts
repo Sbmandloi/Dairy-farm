@@ -5,6 +5,7 @@ import { generateBillsSchema, markPaidSchema } from "@/lib/schemas/billing.schem
 import {
   generateBillsForPeriod,
   markBillPaid,
+  createManualBill,
 } from "@/lib/services/billing.service";
 import { sendBillViaWhatsApp, sendAllBillsWhatsApp } from "@/lib/services/whatsapp.service";
 import { ActionResult } from "@/types";
@@ -94,6 +95,53 @@ export async function sendBillWhatsAppAction(billId: string): Promise<ActionResu
     return { success: true, data: undefined };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "Failed to send WhatsApp" };
+  }
+}
+
+export async function createManualBillAction(data: {
+  customerId: string;
+  periodStart: string;
+  periodEnd: string;
+  totalLiters: number;
+  pricePerLiter: number;
+  notes?: string;
+}): Promise<ActionResult<SerializedBillSummary & { customerName: string; customerPhone: string; customerAddress: string | null }>> {
+  try {
+    if (!data.customerId || !data.periodStart || !data.periodEnd || data.totalLiters <= 0 || data.pricePerLiter <= 0) {
+      return { success: false, error: "Please fill all required fields with valid values" };
+    }
+
+    const bill = await createManualBill({
+      customerId: data.customerId,
+      periodStart: new Date(data.periodStart),
+      periodEnd: new Date(data.periodEnd),
+      totalLiters: data.totalLiters,
+      pricePerLiter: data.pricePerLiter,
+      notes: data.notes,
+    });
+
+    revalidatePath("/billing");
+    revalidatePath("/quick-bill");
+
+    return {
+      success: true,
+      data: {
+        id: bill.id,
+        customerId: bill.customerId,
+        invoiceNumber: bill.invoiceNumber,
+        totalLiters: parseFloat(String(bill.totalLiters)),
+        pricePerLiter: parseFloat(String(bill.pricePerLiter)),
+        totalAmount: parseFloat(String(bill.totalAmount)),
+        status: bill.status,
+        periodStart: bill.periodStart.toISOString().split("T")[0],
+        periodEnd: bill.periodEnd.toISOString().split("T")[0],
+        customerName: bill.customer.name,
+        customerPhone: bill.customer.phoneNumber,
+        customerAddress: bill.customer.address,
+      },
+    };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to create bill" };
   }
 }
 

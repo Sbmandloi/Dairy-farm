@@ -24,6 +24,44 @@ export async function saveDailyEntriesAction(
   }
 }
 
+export async function saveMonthlyEntriesAction(
+  changes: Array<{
+    date: string;
+    customerId: string;
+    totalLiters: number;
+    morningLiters?: number | null;
+    eveningLiters?: number | null;
+  }>
+): Promise<ActionResult<void>> {
+  try {
+    // Group by date for efficient batch saves
+    const byDate = new Map<string, typeof changes>();
+    for (const change of changes) {
+      if (!byDate.has(change.date)) byDate.set(change.date, []);
+      byDate.get(change.date)!.push(change);
+    }
+
+    for (const [dateStr, dateEntries] of byDate) {
+      await saveDailyEntries(
+        new Date(dateStr),
+        dateEntries.map((e) => ({
+          customerId: e.customerId,
+          morningLiters: e.morningLiters ?? undefined,
+          eveningLiters: e.eveningLiters ?? undefined,
+          totalLiters: e.totalLiters,
+        }))
+      );
+    }
+
+    revalidatePath("/monthly-entry");
+    revalidatePath("/daily-entry");
+    revalidatePath("/dashboard");
+    return { success: true, data: undefined };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to save entries" };
+  }
+}
+
 export async function copyPreviousDayAction(targetDate: string): Promise<ActionResult<{
   customerId: string;
   morningLiters: number | null;
