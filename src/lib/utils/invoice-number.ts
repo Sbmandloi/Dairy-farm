@@ -1,26 +1,32 @@
 import { prisma } from "@/lib/db";
 
 export async function generateInvoiceNumber(
-  customerId: string,
+  _customerId: string,
   periodStart: Date
 ): Promise<string> {
   const year = periodStart.getFullYear();
   const month = String(periodStart.getMonth() + 1).padStart(2, "0");
 
-  // Find the highest existing invoice number for this year so we never collide
-  const last = await prisma.bill.findFirst({
+  // Find the highest sequence number across ALL months this year to avoid collisions
+  const allThisYear = await prisma.bill.findMany({
     where: { invoiceNumber: { startsWith: `INV-${year}-` } },
-    orderBy: { invoiceNumber: "desc" },
     select: { invoiceNumber: true },
   });
 
-  let nextSeq = 1;
-  if (last?.invoiceNumber) {
-    // Format: INV-YYYY-MM-NNN — the sequence is always the last segment
-    const parts = last.invoiceNumber.split("-");
-    const lastSeq = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastSeq)) nextSeq = lastSeq + 1;
+  let maxSeq = 0;
+  for (const { invoiceNumber } of allThisYear) {
+    const parts = invoiceNumber.split("-");
+    const seq = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
   }
 
-  return `INV-${year}-${month}-${String(nextSeq).padStart(3, "0")}`;
+  // Loop until we find a candidate that doesn't already exist (handles race conditions)
+  let nextSeq = maxSeq + 1;
+  let candidate = `INV-${year}-${month}-${String(nextSeq).padStart(3, "0")}`;
+  while (await prisma.bill.findFirst({ where: { invoiceNumber: candidate }, select: { id: true } })) {
+    nextSeq++;
+    candidate = `INV-${year}-${month}-${String(nextSeq).padStart(3, "0")}`;
+  }
+
+  return candidate;
 }
