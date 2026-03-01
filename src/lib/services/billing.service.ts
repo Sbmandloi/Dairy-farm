@@ -142,10 +142,28 @@ export async function createManualBill(data: {
   notes?: string;
 }) {
   const totalAmount = Math.round(data.totalLiters * data.pricePerLiter * 100) / 100;
-  const invoiceNumber = await generateInvoiceNumber(data.customerId, data.periodStart);
 
-  return prisma.bill.create({
-    data: {
+  const existing = await prisma.bill.findUnique({
+    where: {
+      customerId_periodStart_periodEnd: {
+        customerId: data.customerId,
+        periodStart: data.periodStart,
+        periodEnd: data.periodEnd,
+      },
+    },
+  });
+
+  const invoiceNumber = existing?.invoiceNumber ?? (await generateInvoiceNumber(data.customerId, data.periodStart));
+
+  return prisma.bill.upsert({
+    where: {
+      customerId_periodStart_periodEnd: {
+        customerId: data.customerId,
+        periodStart: data.periodStart,
+        periodEnd: data.periodEnd,
+      },
+    },
+    create: {
       customerId: data.customerId,
       periodStart: data.periodStart,
       periodEnd: data.periodEnd,
@@ -153,6 +171,12 @@ export async function createManualBill(data: {
       pricePerLiter: data.pricePerLiter,
       totalAmount,
       invoiceNumber,
+      status: "GENERATED",
+    },
+    update: {
+      totalLiters: data.totalLiters,
+      pricePerLiter: data.pricePerLiter,
+      totalAmount,
       status: "GENERATED",
     },
     include: { customer: true, payments: true },
