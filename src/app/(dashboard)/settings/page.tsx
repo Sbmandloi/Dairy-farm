@@ -24,6 +24,7 @@ export default async function SettingsPage() {
     whatsappBusinessAcctId: settings.whatsappBusinessAcctId,
     whatsappPhoneNumberId: settings.whatsappPhoneNumberId,
     whatsappTemplateName: settings.whatsappTemplateName,
+    whatsappConfigured: !!(settings.whatsappPhoneNumberId && settings.whatsappAccessToken),
   };
 
   const users: SerializedUser[] = rawUsers.map((u) => ({

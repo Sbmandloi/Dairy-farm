@@ -133,6 +133,13 @@ export async function updateBillWhatsApp(billId: string, msgId: string) {
   });
 }
 
+function toDateOnly(d: Date): Date {
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const day = d.getDate();
+  return new Date(Date.UTC(y, m, day));
+}
+
 export async function createManualBill(data: {
   customerId: string;
   periodStart: Date;
@@ -142,45 +149,70 @@ export async function createManualBill(data: {
   notes?: string;
 }) {
   const totalAmount = Math.round(data.totalLiters * data.pricePerLiter * 100) / 100;
+  const periodStart = toDateOnly(data.periodStart);
+  const periodEnd = toDateOnly(data.periodEnd);
 
   const existing = await prisma.bill.findUnique({
     where: {
       customerId_periodStart_periodEnd: {
         customerId: data.customerId,
-        periodStart: data.periodStart,
-        periodEnd: data.periodEnd,
+        periodStart,
+        periodEnd,
       },
     },
   });
 
-  const invoiceNumber = existing?.invoiceNumber ?? (await generateInvoiceNumber(data.customerId, data.periodStart));
+  const invoiceNumber = existing?.invoiceNumber ?? (await generateInvoiceNumber(data.customerId, periodStart));
 
-  return prisma.bill.upsert({
-    where: {
-      customerId_periodStart_periodEnd: {
+  try {
+    return await prisma.bill.upsert({
+      where: {
+        customerId_periodStart_periodEnd: {
+          customerId: data.customerId,
+          periodStart,
+          periodEnd,
+        },
+      },
+      create: {
         customerId: data.customerId,
-        periodStart: data.periodStart,
-        periodEnd: data.periodEnd,
+        periodStart,
+        periodEnd,
+        totalLiters: data.totalLiters,
+        pricePerLiter: data.pricePerLiter,
+        totalAmount,
+        invoiceNumber,
+        status: "GENERATED",
       },
-    },
-    create: {
-      customerId: data.customerId,
-      periodStart: data.periodStart,
-      periodEnd: data.periodEnd,
-      totalLiters: data.totalLiters,
-      pricePerLiter: data.pricePerLiter,
-      totalAmount,
-      invoiceNumber,
-      status: "GENERATED",
-    },
-    update: {
-      totalLiters: data.totalLiters,
-      pricePerLiter: data.pricePerLiter,
-      totalAmount,
-      status: "GENERATED",
-    },
-    include: { customer: true, payments: true },
-  });
+      update: {
+        totalLiters: data.totalLiters,
+        pricePerLiter: data.pricePerLiter,
+        totalAmount,
+        status: "GENERATED",
+      },
+      include: { customer: true, payments: true },
+    });
+  } catch (e: unknown) {
+    const err = e as { code?: string };
+    if (err.code === "P2002") {
+      return prisma.bill.update({
+        where: {
+          customerId_periodStart_periodEnd: {
+            customerId: data.customerId,
+            periodStart,
+            periodEnd,
+          },
+        },
+        data: {
+          totalLiters: data.totalLiters,
+          pricePerLiter: data.pricePerLiter,
+          totalAmount,
+          status: "GENERATED",
+        },
+        include: { customer: true, payments: true },
+      });
+    }
+    throw e;
+  }
 }
 
 export async function getPendingBills() {

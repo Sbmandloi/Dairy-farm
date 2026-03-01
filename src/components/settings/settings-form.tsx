@@ -9,18 +9,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { updateSettingsAction } from "@/lib/actions/settings.actions";
 import { Loader2, CheckCircle } from "lucide-react";
 
-// Plain serializable type — no Prisma Decimal or Date objects
 interface FormSettings {
   id: string;
   farmName: string;
   farmAddress: string | null;
   farmPhone: string | null;
-  globalPricePerLiter: number;   // converted from Decimal by the page
+  globalPricePerLiter: number;
   billingCycleType: string;
   entryMode: string;
   whatsappBusinessAcctId: string | null;
   whatsappPhoneNumberId: string | null;
   whatsappTemplateName: string | null;
+  whatsappConfigured?: boolean;
 }
 
 interface SettingsFormProps {
@@ -127,7 +127,12 @@ export function SettingsForm({ settings }: SettingsFormProps) {
       {/* WhatsApp Config — Green API */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold">WhatsApp (Green API — Free)</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold">WhatsApp (Green API — Free)</CardTitle>
+            {settings.whatsappConfigured && (
+              <span className="text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded">Configured</span>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-800 space-y-1">

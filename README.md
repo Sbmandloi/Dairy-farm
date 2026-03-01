@@ -62,7 +62,7 @@ npm run db:studio    # Prisma Studio
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `AUTH_SECRET` | NextAuth secret (openssl rand -base64 32) |
-| `ENCRYPTION_KEY` | AES-256 key for token storage (openssl rand -hex 32) |
+| `ENCRYPTION_KEY` | AES-256 key for WhatsApp token storage (openssl rand -hex 32). Set once in production and never change—changing it invalidates stored credentials. |
 | `WHATSAPP_VERIFY_TOKEN` | WhatsApp webhook verify token |
 | `PDF_STORAGE_PATH` | Local path for PDF storage (default: ./storage/invoices) |
 

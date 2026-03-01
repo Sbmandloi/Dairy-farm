@@ -32,7 +32,9 @@ export async function updateSettingsAction(formData: FormData): Promise<ActionRe
 
     const data = { ...parsed.data };
 
-    // Encrypt WhatsApp token if provided
+    if (!data.whatsappAccessToken?.trim()) delete data.whatsappAccessToken;
+    if (!data.whatsappPhoneNumberId?.trim()) delete data.whatsappPhoneNumberId;
+
     if (data.whatsappAccessToken && data.whatsappAccessToken.length > 20) {
       try {
         data.whatsappAccessToken = encrypt(data.whatsappAccessToken);
