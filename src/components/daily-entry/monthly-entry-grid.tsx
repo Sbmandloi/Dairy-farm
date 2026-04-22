@@ -4,13 +4,14 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SearchBar } from "@/components/ui/search-bar";
-import { saveMonthlyEntriesAction } from "@/lib/actions/daily-entry.actions";
+import { saveMonthlyEntriesAction, copyPreviousDayAction } from "@/lib/actions/daily-entry.actions";
 import {
   ChevronLeft,
   ChevronRight,
   Save,
   Loader2,
   CheckCircle,
+  Copy,
   Droplets,
   Users,
   TrendingUp,
@@ -136,6 +137,14 @@ export function MonthlyEntryGrid({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [copying, setCopying] = useState(false);
+  const [copyNote, setCopyNote] = useState<string | null>(null);
+
+  // Is the currently-viewed month the one that contains today?
+  const today = new Date();
+  const isCurrentMonth =
+    today.getFullYear() === year && today.getMonth() + 1 === month;
+  const todayDay = today.getDate();
 
   // ─── Cell edit helpers ────────────────────────────────────────────────────
 
@@ -196,6 +205,50 @@ export function MonthlyEntryGrid({
   }
 
   // ─── Save ─────────────────────────────────────────────────────────────────
+
+  async function handleCopyYesterday() {
+    if (!isCurrentMonth) return;
+    setCopying(true);
+    setCopyNote(null);
+    setError("");
+    try {
+      const targetDateStr = dateStr(year, month, todayDay);
+      const result = await copyPreviousDayAction(targetDateStr);
+      if (!result.success) {
+        setError(result.error ?? "Failed to copy yesterday's entries");
+        return;
+      }
+      if (result.data.length === 0) {
+        setCopyNote("No entries found for yesterday — nothing to copy.");
+        setTimeout(() => setCopyNote(null), 4000);
+        return;
+      }
+      setData((d) => {
+        const next = { ...d };
+        for (const entry of result.data) {
+          next[`${entry.customerId}-${todayDay}`] = {
+            totalLiters: entry.totalLiters,
+            morningLiters: entry.morningLiters,
+            eveningLiters: entry.eveningLiters,
+          };
+        }
+        return next;
+      });
+      setDirty((prev) => {
+        const next = new Set(prev);
+        for (const entry of result.data) {
+          next.add(`${entry.customerId}-${todayDay}`);
+        }
+        return next;
+      });
+      setSaved(false);
+      setCopyNote(
+        `Copied ${result.data.length} entries from yesterday into ${MONTH_NAMES[month - 1]} ${todayDay}. Click Save to persist.`
+      );
+    } finally {
+      setCopying(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -285,6 +338,22 @@ export function MonthlyEntryGrid({
         </div>
 
         <div className="flex items-center gap-2">
+          {isCurrentMonth && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyYesterday}
+              disabled={copying}
+              title="Fill today's column with yesterday's entries for every customer"
+            >
+              {copying ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
+              Copy Yesterday
+            </Button>
+          )}
           {dirty.size > 0 && (
             <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">
               {dirty.size} unsaved change{dirty.size !== 1 ? "s" : ""}
@@ -310,6 +379,12 @@ export function MonthlyEntryGrid({
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
           {error}
+        </div>
+      )}
+
+      {copyNote && (
+        <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+          {copyNote}
         </div>
       )}
 
