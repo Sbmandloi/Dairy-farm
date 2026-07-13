@@ -16,7 +16,7 @@ import { SendWhatsAppButton } from "./send-whatsapp-button";
 export interface QuickBillCustomer {
   id: string;
   name: string;
-  phoneNumber: string;
+  phoneNumber: string | null;
   address: string | null;
   pricePerLiter: number | null;
 }
@@ -76,7 +76,7 @@ interface SavedBill {
   periodStart: string;
   periodEnd: string;
   customerName: string;
-  customerPhone: string;
+  customerPhone: string | null;
   customerAddress: string | null;
 }
 
@@ -112,7 +112,7 @@ export function QuickBillWizard({ customers, settings }: Props) {
     ? customers.filter(
         (c) =>
           c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          c.phoneNumber.includes(searchQuery)
+          (c.phoneNumber?.includes(searchQuery) ?? false)
       )
     : customers;
 
@@ -690,7 +690,7 @@ interface InvoicePreviewProps {
   periodStart: string;
   periodEnd: string;
   customerName: string;
-  customerPhone: string;
+  customerPhone: string | null;
   customerAddress: string | null;
   totalLiters: number;
   pricePerLiter: number;
@@ -741,9 +741,11 @@ function InvoicePreview({
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Bill To</p>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
           <p className="text-base font-bold text-gray-900">{customerName}</p>
-          <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-            <Phone className="w-3.5 h-3.5" /> {customerPhone}
-          </p>
+          {customerPhone && (
+            <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+              <Phone className="w-3.5 h-3.5" /> {customerPhone}
+            </p>
+          )}
           {customerAddress && (
             <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
               <MapPin className="w-3.5 h-3.5" /> {customerAddress}

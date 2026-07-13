@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       [
         e.date.toISOString().slice(0, 10),
         escape(e.customer.name),
-        escape(e.customer.phoneNumber),
+        escape(e.customer.phoneNumber ?? ""),
         e.morningLiters ? parseFloat(String(e.morningLiters)).toFixed(2) : "",
         e.eveningLiters ? parseFloat(String(e.eveningLiters)).toFixed(2) : "",
         parseFloat(String(e.totalLiters)).toFixed(2),
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       [
         escape(b.invoiceNumber),
         escape(b.customer.name),
-        escape(b.customer.phoneNumber),
+        escape(b.customer.phoneNumber ?? ""),
         b.periodStart.toISOString().slice(0, 10),
         b.periodEnd.toISOString().slice(0, 10),
         parseFloat(String(b.totalLiters)).toFixed(2),

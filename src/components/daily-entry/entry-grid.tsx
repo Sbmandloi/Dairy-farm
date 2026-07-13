@@ -11,7 +11,7 @@ import { Loader2, Save, Copy, CheckCircle } from "lucide-react";
 export interface SerializedCustomer {
   id: string;
   name: string;
-  phoneNumber: string;
+  phoneNumber: string | null;
   address: string | null;
   pricePerLiter: number | null;
   isActive: boolean;
@@ -257,7 +257,7 @@ export function EntryGrid({ date, rows, entryMode }: EntryGridProps) {
   const visibleRows = searchQuery
     ? rows.filter((r) =>
         r.customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.customer.phoneNumber.includes(searchQuery)
+        (r.customer.phoneNumber?.includes(searchQuery) ?? false)
       )
     : rows;
 

@@ -12,12 +12,14 @@ import {
   BarChart3,
   Settings,
   Milk,
+  UsersRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/customers", label: "Customers", icon: Users },
+  { href: "/customer-manager", label: "Customer Manager", icon: UsersRound },
   { href: "/daily-entry", label: "Daily Entry", icon: ClipboardList },
   { href: "/monthly-entry", label: "Monthly View", icon: CalendarDays },
   { href: "/billing", label: "Billing", icon: Receipt },

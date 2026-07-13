@@ -2,8 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createCustomerSchema, updateCustomerSchema } from "@/lib/schemas/customer.schema";
-import { createCustomer, updateCustomer, toggleCustomerStatus, deleteCustomer } from "@/lib/services/customer.service";
+import {
+  createCustomerSchema,
+  updateCustomerSchema,
+  bulkUpdateCustomersSchema,
+  CustomerPatchInput,
+} from "@/lib/schemas/customer.schema";
+import { createCustomer, updateCustomer, toggleCustomerStatus, deleteCustomer, bulkUpdateCustomers } from "@/lib/services/customer.service";
+import { sendPaymentReminder } from "@/lib/services/whatsapp.service";
 import { ActionResult } from "@/types";
 
 export async function createCustomerAction(formData: FormData): Promise<ActionResult<void>> {
@@ -69,6 +75,56 @@ export async function toggleCustomerStatusAction(id: string): Promise<ActionResu
     return { success: true, data: undefined };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "Failed to update status" };
+  }
+}
+
+/**
+ * Commit the batch of edits staged in the customer manager. Validates every patch
+ * up front and rejects the whole batch if any row is invalid, so the user never
+ * ends up with a partially-applied save they didn't notice.
+ */
+export async function bulkUpdateCustomersAction(
+  patches: CustomerPatchInput[]
+): Promise<ActionResult<{ updated: number }>> {
+  try {
+    const parsed = bulkUpdateCustomersSchema.safeParse(patches);
+    if (!parsed.success) {
+      // Map Zod's array-index paths back to the row id the user can actually see.
+      const rowErrors: Record<string, string[]> = {};
+      for (const issue of parsed.error.issues) {
+        const idx = issue.path[0];
+        const field = issue.path[1];
+        if (typeof idx === "number" && patches[idx]) {
+          const key = `${patches[idx].id}.${String(field)}`;
+          (rowErrors[key] ??= []).push(issue.message);
+        }
+      }
+      return { success: false, error: "Some changes are invalid", fieldErrors: rowErrors };
+    }
+
+    await bulkUpdateCustomers(parsed.data);
+
+    revalidatePath("/customer-manager");
+    revalidatePath("/customers");
+    return { success: true, data: { updated: parsed.data.length } };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to save changes",
+    };
+  }
+}
+
+export async function sendPaymentReminderAction(id: string): Promise<ActionResult<void>> {
+  try {
+    await sendPaymentReminder(id);
+    revalidatePath("/customer-manager");
+    return { success: true, data: undefined };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to send reminder",
+    };
   }
 }
 

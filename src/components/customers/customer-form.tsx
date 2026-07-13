@@ -14,7 +14,7 @@ import { useState } from "react";
 interface FormCustomer {
   id: string;
   name: string;
-  phoneNumber: string;
+  phoneNumber: string | null;
   address: string | null;
   pricePerLiter: number | null; // already converted from Decimal by the page
   startDate: string;            // ISO date string "YYYY-MM-DD"
@@ -67,15 +67,16 @@ export function CustomerForm({ customer }: CustomerFormProps) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="phoneNumber">Phone Number *</Label>
+        <Label htmlFor="phoneNumber">Phone Number</Label>
         <Input
           id="phoneNumber"
           name="phoneNumber"
-          defaultValue={customer?.phoneNumber}
+          defaultValue={customer?.phoneNumber ?? ""}
           placeholder="+91 98765 43210"
-          required
         />
-        <p className="text-xs text-gray-400">Enter 10-digit mobile number. Will be used for WhatsApp invoicing.</p>
+        <p className="text-xs text-gray-400">
+          Optional. Enter 10-digit mobile number. Required for WhatsApp invoicing.
+        </p>
         {errors.phoneNumber && <p className="text-xs text-red-500">{errors.phoneNumber[0]}</p>}
       </div>
 

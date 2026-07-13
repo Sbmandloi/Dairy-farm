@@ -23,7 +23,7 @@ import {
 export interface MonthlyCustomer {
   id: string;
   name: string;
-  phoneNumber: string;
+  phoneNumber: string | null;
 }
 
 export interface MonthlyEntryRow {
@@ -310,7 +310,7 @@ export function MonthlyEntryGrid({
   const visibleCustomers = searchQuery
     ? customers.filter((c) =>
         c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.phoneNumber.includes(searchQuery)
+        (c.phoneNumber?.includes(searchQuery) ?? false)
       )
     : customers;
 

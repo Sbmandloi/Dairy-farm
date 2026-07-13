@@ -105,7 +105,7 @@ export async function createManualBillAction(data: {
   totalLiters: number;
   pricePerLiter: number;
   notes?: string;
-}): Promise<ActionResult<SerializedBillSummary & { customerName: string; customerPhone: string; customerAddress: string | null }>> {
+}): Promise<ActionResult<SerializedBillSummary & { customerName: string; customerPhone: string | null; customerAddress: string | null }>> {
   try {
     if (!data.customerId || !data.periodStart || !data.periodEnd || data.totalLiters <= 0 || data.pricePerLiter <= 0) {
       return { success: false, error: "Please fill all required fields with valid values" };

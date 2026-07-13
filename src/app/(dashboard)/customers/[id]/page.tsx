@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getCustomerById } from "@/lib/services/customer.service";
+import { getCustomerById, getCustomerPaymentHistory } from "@/lib/services/customer.service";
 import { Header } from "@/components/layout/header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { DeleteCustomerButton } from "@/components/customers/delete-customer-but
 import Link from "next/link";
 import { formatCurrency, formatDate, formatLiters, formatPeriod, decimalToNumber } from "@/lib/utils/format";
 import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from "@/lib/constants";
-import { Phone, MapPin, Calendar, IndianRupee, Edit, Droplets, Receipt, TrendingUp } from "lucide-react";
+import { Phone, MapPin, Calendar, IndianRupee, Edit, Droplets, Receipt, TrendingUp, Wallet, StickyNote } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -38,19 +38,17 @@ function getInitials(name: string) {
 
 export default async function CustomerDetailPage({ params }: Props) {
   const { id } = await params;
-  const customer = await getCustomerById(id);
+  const [customer, ledger] = await Promise.all([
+    getCustomerById(id),
+    getCustomerPaymentHistory(id),
+  ]);
   if (!customer) notFound();
 
   const totalLiters = customer.dailyEntries.reduce(
     (s, e) => s + decimalToNumber(e.totalLiters), 0
   );
-  const totalBilled = customer.bills.reduce(
-    (s, b) => s + decimalToNumber(b.totalAmount), 0
-  );
-  const totalPaid = customer.bills
-    .flatMap((b) => b.payments)
-    .reduce((s, p) => s + decimalToNumber(p.amountPaid), 0);
-  const balance = totalBilled - totalPaid;
+  // Account totals come from the ledger (all bills), not just the 12 shown below.
+  const { totalBilled, totalPaid, totalPending: balance, payments, pendingByBill, unpaidBills } = ledger;
 
   return (
     <div>
@@ -105,10 +103,12 @@ export default async function CustomerDetailPage({ params }: Props) {
 
             {/* Contact info */}
             <div className="grid sm:grid-cols-2 gap-1.5 text-sm text-gray-500 mb-4">
-              <div className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                {customer.phoneNumber}
-              </div>
+              {customer.phoneNumber && (
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  {customer.phoneNumber}
+                </div>
+              )}
               {customer.address && (
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -160,6 +160,7 @@ export default async function CustomerDetailPage({ params }: Props) {
         <Tabs defaultValue="bills">
           <TabsList>
             <TabsTrigger value="bills">Bills ({customer.bills.length})</TabsTrigger>
+            <TabsTrigger value="payments">Payments ({payments.length})</TabsTrigger>
             <TabsTrigger value="entries">Recent Entries</TabsTrigger>
           </TabsList>
 
@@ -195,6 +196,142 @@ export default async function CustomerDetailPage({ params }: Props) {
                   );
                 })}
               </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="payments" className="mt-4 space-y-4">
+            {/* Account summary */}
+            <div className="grid grid-cols-3 gap-3">
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <p className="text-xs text-gray-400 mb-1">Total Billed</p>
+                  <p className="text-lg font-bold text-gray-800">{formatCurrency(totalBilled)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <p className="text-xs text-gray-400 mb-1">Amount Paid</p>
+                  <p className="text-lg font-bold text-green-600">{formatCurrency(totalPaid)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <p className="text-xs text-gray-400 mb-1">Amount Pending</p>
+                  <p className={`text-lg font-bold ${balance > 0 ? "text-orange-500" : "text-green-600"}`}>
+                    {formatCurrency(balance)}
+                  </p>
+                  {unpaidBills > 0 && (
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      across {unpaidBills} bill{unpaidBills > 1 ? "s" : ""}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {payments.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <Wallet className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                <p>No payments recorded yet</p>
+                {balance > 0 && (
+                  <p className="text-xs mt-1">
+                    {formatCurrency(balance)} is outstanding across this customer&apos;s bills.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Desktop: full ledger table */}
+                <div className="hidden md:block bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Paid On</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Invoice</th>
+                        <th className="text-right px-4 py-3 font-medium text-gray-600">Bill Amount</th>
+                        <th className="text-right px-4 py-3 font-medium text-gray-600">Amount Paid</th>
+                        <th className="text-right px-4 py-3 font-medium text-gray-600">Pending</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payments.map((p) => {
+                        const pending = pendingByBill.get(p.bill.id) ?? 0;
+                        return (
+                          <tr key={p.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/60">
+                            <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">{formatDate(p.paidOn)}</td>
+                            <td className="px-4 py-2.5">
+                              <Link href={`/billing/${p.bill.id}`} className="text-blue-600 hover:underline font-medium">
+                                {p.bill.invoiceNumber}
+                              </Link>
+                              <p className="text-xs text-gray-400">
+                                {formatPeriod(p.bill.periodStart, p.bill.periodEnd)}
+                              </p>
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-gray-500">
+                              {formatCurrency(p.bill.totalAmount)}
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-semibold text-green-600">
+                              {formatCurrency(p.amountPaid)}
+                            </td>
+                            <td className={`px-4 py-2.5 text-right font-medium ${pending > 0 ? "text-orange-500" : "text-gray-400"}`}>
+                              {pending > 0 ? formatCurrency(pending) : "—"}
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-500 max-w-[220px]">
+                              {p.note ? (
+                                <span className="line-clamp-2">{p.note}</span>
+                              ) : (
+                                <span className="text-gray-300">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-50 border-t border-gray-200 font-semibold text-gray-800">
+                        <td className="px-4 py-3" colSpan={3}>Total</td>
+                        <td className="px-4 py-3 text-right text-green-600">{formatCurrency(totalPaid)}</td>
+                        <td className={`px-4 py-3 text-right ${balance > 0 ? "text-orange-500" : "text-gray-400"}`}>
+                          {balance > 0 ? formatCurrency(balance) : "—"}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Mobile: card list */}
+                <div className="md:hidden space-y-2">
+                  {payments.map((p) => {
+                    const pending = pendingByBill.get(p.bill.id) ?? 0;
+                    return (
+                      <div key={p.id} className="p-4 bg-white border border-gray-200 rounded-lg">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <Link href={`/billing/${p.bill.id}`} className="font-medium text-blue-600">
+                              {p.bill.invoiceNumber}
+                            </Link>
+                            <p className="text-xs text-gray-400 mt-0.5">{formatDate(p.paidOn)}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="font-bold text-green-600">{formatCurrency(p.amountPaid)}</p>
+                            {pending > 0 && (
+                              <p className="text-xs text-orange-500">Pending: {formatCurrency(pending)}</p>
+                            )}
+                          </div>
+                        </div>
+                        {p.note && (
+                          <p className="flex items-start gap-1.5 text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
+                            <StickyNote className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-px" />
+                            {p.note}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </TabsContent>
 

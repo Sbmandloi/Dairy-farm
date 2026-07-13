@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     rows.push(
       [
         escape(c.name),
-        escape(c.phoneNumber),
+        escape(c.phoneNumber ?? ""),
         escape(c.address || ""),
         c.isActive ? "Active" : "Inactive",
         c.dailyEntries.length.toString(),

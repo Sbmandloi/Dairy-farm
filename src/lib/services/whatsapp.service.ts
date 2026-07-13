@@ -57,9 +57,87 @@ async function sendPdfBuffer(
   return data.idMessage as string;
 }
 
+async function sendTextMessage(
+  idInstance: string,
+  apiToken: string,
+  chatId: string,
+  message: string
+): Promise<string> {
+  const res = await fetch(greenApiUrl(idInstance, "sendMessage", apiToken), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chatId, message }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Green API error: ${JSON.stringify(err)}`);
+  }
+
+  const data = await res.json();
+  return data.idMessage as string;
+}
+
+/**
+ * Send a customer a plain-text nudge about their outstanding dues. Unlike
+ * sendBillViaWhatsApp this does NOT touch bill status — a reminder is a nudge,
+ * not a re-delivery of the invoice.
+ */
+export async function sendPaymentReminder(customerId: string): Promise<string> {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    include: { bills: { include: { payments: true } } },
+  });
+  if (!customer) throw new Error("Customer not found");
+
+  if (!customer.phoneNumber) {
+    throw new Error(`${customer.name} has no phone number. Add one to send a reminder.`);
+  }
+
+  const pending = customer.bills.reduce((sum, b) => {
+    const paid = b.payments.reduce((s, p) => s + parseFloat(String(p.amountPaid)), 0);
+    return sum + (parseFloat(String(b.totalAmount)) - paid);
+  }, 0);
+
+  if (pending <= 0.01) {
+    throw new Error(`${customer.name} has no outstanding dues.`);
+  }
+
+  const { idInstance, apiToken } = await getGreenApiConfig();
+  const settings = await getSettings();
+
+  const message =
+    `Dear ${customer.name},\n\n` +
+    `This is a gentle reminder that Rs.${pending.toFixed(2)} is pending on your milk account.\n\n` +
+    `Kindly arrange the payment at your convenience.\n\n` +
+    `Thank you,\n${settings.farmName}`;
+
+  const msgId = await sendTextMessage(
+    idInstance,
+    apiToken,
+    toGreenApiChatId(customer.phoneNumber),
+    message
+  );
+
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: { lastRemindedAt: new Date() },
+  });
+
+  return msgId;
+}
+
 export async function sendBillViaWhatsApp(billId: string): Promise<string> {
   const bill = await getBillById(billId);
   if (!bill) throw new Error("Bill not found");
+
+  // Phone number is optional on a customer, but WhatsApp delivery cannot work
+  // without one — fail loudly rather than sending to a malformed chatId.
+  if (!bill.customer.phoneNumber) {
+    throw new Error(
+      `${bill.customer.name} has no phone number. Add one to send bills via WhatsApp.`
+    );
+  }
 
   const { idInstance, apiToken } = await getGreenApiConfig();
   const settings = await getSettings();

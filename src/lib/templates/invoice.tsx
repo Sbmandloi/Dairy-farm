@@ -154,7 +154,9 @@ export function InvoiceDocument({ bill, entries, settings }: InvoiceDocumentProp
           <Text style={styles.sectionTitle}>BILL TO</Text>
           <View style={styles.billTo}>
             <Text style={styles.billToName}>{bill.customer.name}</Text>
-            <Text style={styles.billToInfo}>{bill.customer.phoneNumber}</Text>
+            {bill.customer.phoneNumber ? (
+              <Text style={styles.billToInfo}>{bill.customer.phoneNumber}</Text>
+            ) : null}
             {bill.customer.address ? (
               <Text style={styles.billToInfo}>{bill.customer.address}</Text>
             ) : null}

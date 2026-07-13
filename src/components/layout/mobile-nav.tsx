@@ -2,16 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, ClipboardList, CalendarDays, Receipt, Zap } from "lucide-react";
+import { LayoutDashboard, Users, ClipboardList, CalendarDays, Receipt, Zap, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/customers", label: "Customers", icon: Users },
+  { href: "/customer-manager", label: "Manage", icon: UsersRound },
   { href: "/daily-entry", label: "Entry", icon: ClipboardList },
   { href: "/monthly-entry", label: "Monthly", icon: CalendarDays },
   { href: "/billing", label: "Billing", icon: Receipt },
-  { href: "/quick-bill", label: "Quick Bill", icon: Zap },
+  { href: "/quick-bill", label: "Quick", icon: Zap },
 ];
 
 export function MobileNav() {

@@ -189,10 +189,12 @@ export default async function CustomersPage({ searchParams }: PageProps) {
 
               {/* Contact info */}
               <div className="space-y-1 text-sm text-gray-500 mb-3">
-                <div className="flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span>{c.phoneNumber}</span>
-                </div>
+                {c.phoneNumber && (
+                  <div className="flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{c.phoneNumber}</span>
+                  </div>
+                )}
                 {c.address && (
                   <div className="flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
