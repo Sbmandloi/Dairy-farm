@@ -1,7 +1,19 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import { BillWithCustomer } from "@/types";
-import { formatDate, formatCurrency, formatLiters, decimalToNumber } from "@/lib/utils/format";
+import { formatDate, formatLiters, decimalToNumber } from "@/lib/utils/format";
+
+/**
+ * Money for the PDF. Not formatCurrency: the rupee sign is missing from the
+ * built-in Helvetica the renderer uses, so "₹900.00" prints as a stray glyph or
+ * nothing at all. "Rs." is what the WhatsApp caption already says.
+ */
+function money(amount: number): string {
+  return `Rs. ${new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)}`;
+}
 
 // Types for entries and settings passed in
 type Entry = {
@@ -26,6 +38,8 @@ const c = {
   bgRow: "#f9fafb",
   text: "#1a1a1a",
   sub: "#555555",
+  green: "#15803d",
+  red: "#b91c1c",
 };
 
 const styles = StyleSheet.create({
@@ -84,6 +98,11 @@ const styles = StyleSheet.create({
   colEvening: { width: "25%" },
   colTotal: { width: "20%", fontFamily: "Helvetica-Bold" },
 
+  // Payments received
+  colPayDate: { width: "30%" },
+  colPayNote: { width: "50%" },
+  colPayAmount: { width: "20%", fontFamily: "Helvetica-Bold", textAlign: "right" },
+
   // Summary
   summaryBox: {
     marginTop: 16,
@@ -91,7 +110,7 @@ const styles = StyleSheet.create({
     borderColor: c.blue,
     borderRadius: 6,
     padding: 12,
-    width: 220,
+    width: 250,
     alignSelf: "flex-end",
   },
   summaryRow: {
@@ -100,9 +119,29 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     fontSize: 11,
   },
+  summarySubTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 5,
+    fontSize: 11,
+    fontFamily: "Helvetica-Bold",
+  },
+  summaryPaidText: { fontSize: 11, fontFamily: "Helvetica-Bold", color: c.green },
   summaryDivider: { borderTopWidth: 1, borderTopColor: c.lightGray, marginVertical: 4 },
   summaryTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: 4 },
   summaryTotalText: { fontSize: 13, fontFamily: "Helvetica-Bold", color: c.blue },
+  summaryDueText: { fontSize: 13, fontFamily: "Helvetica-Bold", color: c.red },
+  summarySettledText: { fontSize: 13, fontFamily: "Helvetica-Bold", color: c.green },
+  paidStamp: {
+    marginTop: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: "#dcfce7",
+    color: c.green,
+    fontSize: 10,
+    fontFamily: "Helvetica-Bold",
+    textAlign: "center",
+  },
 
   // Footer
   footer: {
@@ -126,6 +165,16 @@ interface InvoiceDocumentProps {
 }
 
 export function InvoiceDocument({ bill, entries, settings }: InvoiceDocumentProps) {
+  // An invoice must be a complete statement: what was billed, what has already
+  // been collected against it, and what is actually left to pay.
+  const payments = [...(bill.payments ?? [])].sort(
+    (a, b) => new Date(a.paidOn).getTime() - new Date(b.paidOn).getTime()
+  );
+  const billAmount = decimalToNumber(bill.totalAmount);
+  const amountPaid = payments.reduce((s, p) => s + decimalToNumber(p.amountPaid), 0);
+  const balanceDue = Math.max(0, billAmount - amountPaid);
+  const settled = balanceDue <= 0.01;
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -204,6 +253,32 @@ export function InvoiceDocument({ bill, entries, settings }: InvoiceDocumentProp
           </View>
         </View>
 
+        {/* Payments already collected against this bill */}
+        {payments.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>PAYMENTS RECEIVED</Text>
+            <View>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.tableHeaderText, styles.colPayDate]}>Date</Text>
+                <Text style={[styles.tableHeaderText, styles.colPayNote]}>Note</Text>
+                <Text style={[styles.tableHeaderText, styles.colPayAmount]}>Amount</Text>
+              </View>
+              {payments.map((p, i) => (
+                <View
+                  key={p.id}
+                  style={[styles.tableRow, i % 2 === 1 ? styles.tableRowEven : {}]}
+                >
+                  <Text style={[styles.tableCell, styles.colPayDate]}>{formatDate(p.paidOn)}</Text>
+                  <Text style={[styles.tableCell, styles.colPayNote]}>{p.note || "-"}</Text>
+                  <Text style={[styles.tableCell, styles.colPayAmount]}>
+                    {money(decimalToNumber(p.amountPaid))}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         {/* Summary Box */}
         <View style={styles.summaryBox}>
           <View style={styles.summaryRow}>
@@ -212,15 +287,27 @@ export function InvoiceDocument({ bill, entries, settings }: InvoiceDocumentProp
           </View>
           <View style={styles.summaryRow}>
             <Text>Price / Liter</Text>
-            <Text>{formatCurrency(decimalToNumber(bill.pricePerLiter))}</Text>
+            <Text>{money(decimalToNumber(bill.pricePerLiter))}</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summarySubTotalRow}>
+            <Text>Total Bill Amount</Text>
+            <Text>{money(billAmount)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryPaidText}>Amount Paid</Text>
+            <Text style={styles.summaryPaidText}>- {money(amountPaid)}</Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryTotalRow}>
-            <Text style={styles.summaryTotalText}>TOTAL AMOUNT</Text>
-            <Text style={styles.summaryTotalText}>
-              {formatCurrency(decimalToNumber(bill.totalAmount))}
+            <Text style={settled ? styles.summarySettledText : styles.summaryDueText}>
+              BALANCE DUE
+            </Text>
+            <Text style={settled ? styles.summarySettledText : styles.summaryDueText}>
+              {money(balanceDue)}
             </Text>
           </View>
+          {settled ? <Text style={styles.paidStamp}>PAID IN FULL - THANK YOU</Text> : null}
         </View>
 
         {/* Footer */}

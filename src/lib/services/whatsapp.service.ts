@@ -149,8 +149,22 @@ export async function sendBillViaWhatsApp(billId: string): Promise<string> {
   const pdfBuffer = await generatePdfBuffer(bill as BillWithCustomer);
 
   const month = bill.periodStart.toLocaleString("en-IN", { month: "long", year: "numeric" });
-  const totalAmount = parseFloat(String(bill.totalAmount)).toFixed(2);
-  const caption = `Milk bill for ${month}\nFrom: ${settings.farmName}\nTotal: Rs.${totalAmount}\nInvoice: ${bill.invoiceNumber}`;
+
+  // Quote the full picture, not just the gross total: a customer who has already
+  // paid part of this bill should see that credited, and only owe the balance.
+  const billAmount = parseFloat(String(bill.totalAmount));
+  const paid = bill.payments.reduce((s, p) => s + parseFloat(String(p.amountPaid)), 0);
+  const balance = Math.max(0, billAmount - paid);
+
+  const caption =
+    `Milk bill for ${month}\n` +
+    `From: ${settings.farmName}\n` +
+    `Invoice: ${bill.invoiceNumber}\n\n` +
+    `Total Bill: Rs.${billAmount.toFixed(2)}\n` +
+    (paid > 0.01 ? `Amount Paid: Rs.${paid.toFixed(2)}\n` : "") +
+    (balance > 0.01
+      ? `Balance Due: Rs.${balance.toFixed(2)}`
+      : `Balance Due: Rs.0.00 - PAID IN FULL, thank you!`);
 
   const fileName = `${bill.invoiceNumber}.pdf`;
   const msgId = await sendPdfBuffer(idInstance, apiToken, chatId, pdfBuffer, fileName, caption);
