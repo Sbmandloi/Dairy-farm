@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { saveDailyEntriesSchema } from "@/lib/schemas/daily-entry.schema";
 import { saveDailyEntries, copyPreviousDay } from "@/lib/services/daily-entry.service";
+import { parseDateOnly } from "@/lib/utils/date";
 import { ActionResult } from "@/types";
 
 export async function saveDailyEntriesAction(
@@ -15,7 +16,7 @@ export async function saveDailyEntriesAction(
       return { success: false, error: "Validation failed" };
     }
 
-    await saveDailyEntries(new Date(date), parsed.data.entries);
+    await saveDailyEntries(parseDateOnly(date), parsed.data.entries);
     revalidatePath("/daily-entry");
     revalidatePath("/dashboard");
     return { success: true, data: undefined };
@@ -43,7 +44,7 @@ export async function saveMonthlyEntriesAction(
 
     for (const [dateStr, dateEntries] of byDate) {
       await saveDailyEntries(
-        new Date(dateStr),
+        parseDateOnly(dateStr),
         dateEntries.map((e) => ({
           customerId: e.customerId,
           morningLiters: e.morningLiters ?? undefined,
@@ -69,7 +70,7 @@ export async function copyPreviousDayAction(targetDate: string): Promise<ActionR
   totalLiters: number;
 }[]>> {
   try {
-    const entries = await copyPreviousDay(new Date(targetDate));
+    const entries = await copyPreviousDay(parseDateOnly(targetDate));
     // Serialize Decimal → number so it can cross the Server Action boundary
     const serialized = entries.map((e) => ({
       customerId: e.customerId,

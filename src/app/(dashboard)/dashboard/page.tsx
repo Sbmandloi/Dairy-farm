@@ -1,27 +1,29 @@
-import { getDashboardStats } from "@/lib/services/billing.service";
-import { getDailyEntriesWithCustomers } from "@/lib/services/daily-entry.service";
-import { formatCurrency, formatLiters, formatDate } from "@/lib/utils/format";
+import { getDashboardData } from "@/lib/services/dashboard.service";
+import { formatCurrency, formatLiters, formatDate, decimalToNumber } from "@/lib/utils/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Header } from "@/components/layout/header";
+import { AutoRefresh } from "@/components/dashboard/auto-refresh";
 import { auth } from "@/lib/auth";
 import { Milk, Users, IndianRupee, Receipt, AlertCircle, ArrowRight, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BILL_STATUS_LABELS } from "@/lib/constants";
-import { getPendingBills } from "@/lib/services/billing.service";
-import { decimalToNumber } from "@/lib/utils/format";
+
+// Always render fresh on request; the dashboard reflects live entry/billing state.
+export const dynamic = "force-dynamic";
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
 
 export default async function DashboardPage() {
   const session = await auth();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const [stats, todayEntries, pendingBills] = await Promise.all([
-    getDashboardStats(),
-    getDailyEntriesWithCustomers(today),
-    getPendingBills(),
-  ]);
+  const { today, stats, todayList, pendingBills } = await getDashboardData();
+  const generatedAt = Date.now();
 
   const statCards = [
     {
@@ -66,16 +68,28 @@ export default async function DashboardPage() {
     },
   ];
 
-  const todayWithEntry = todayEntries.filter((r) => r.entry).length;
-  const todayTotal = todayEntries
-    .filter((r) => r.entry)
-    .reduce((s, r) => s + decimalToNumber(r.entry!.totalLiters), 0);
+  const todayWithEntry = todayList.filter((r) => r.entry).length;
+  const progressPct =
+    todayList.length > 0 ? Math.round((todayWithEntry / todayList.length) * 100) : 0;
+  const remaining = todayList.length - todayWithEntry;
 
   return (
     <div>
-      <Header title="Dashboard" userName={session?.user?.name ?? "Admin"} />
+      <Header
+        title="Dashboard"
+        userName={session?.user?.name ?? "Admin"}
+        actions={<AutoRefresh generatedAt={generatedAt} />}
+      />
 
       <div className="p-4 md:p-6 space-y-6">
+        {/* Greeting */}
+        <div className="animate-fade-in">
+          <p className="text-lg font-semibold text-gray-900">
+            {greeting()}, {session?.user?.name ?? "Admin"}
+          </p>
+          <p className="text-sm text-gray-500">{formatDate(today)}</p>
+        </div>
+
         {/* Stat Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {statCards.map((card, i) => (
@@ -89,7 +103,7 @@ export default async function DashboardPage() {
                     <p className="text-xl font-bold text-gray-900 mt-1 leading-tight">{card.value}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{card.sub}</p>
                   </div>
-                  <div className={`p-2.5 rounded-xl bg-white shadow-sm`}>
+                  <div className="p-2.5 rounded-xl bg-white shadow-sm">
                     <card.icon className={`w-4 h-4 ${card.color}`} />
                   </div>
                 </div>
@@ -99,32 +113,24 @@ export default async function DashboardPage() {
         </div>
 
         {/* Today's progress bar */}
-        {todayEntries.length > 0 && (
+        {todayList.length > 0 && (
           <div className="animate-fade-in bg-white border border-gray-200 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-gray-700">
-                Today's Entry Progress
-              </p>
+              <p className="text-sm font-semibold text-gray-700">Today&apos;s Entry Progress</p>
               <p className="text-xs text-gray-400">
-                {todayWithEntry} / {todayEntries.length} customers •{" "}
-                <span className="font-bold text-blue-600">{formatLiters(todayTotal)}</span>
+                {todayWithEntry} / {todayList.length} customers •{" "}
+                <span className="font-bold text-blue-600">{formatLiters(stats.todayLiters)}</span>
               </p>
             </div>
             <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-700"
-                style={{
-                  width: `${
-                    todayEntries.length > 0
-                      ? Math.round((todayWithEntry / todayEntries.length) * 100)
-                      : 0
-                  }%`,
-                }}
+                style={{ width: `${progressPct}%` }}
               />
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
-              {todayEntries.length - todayWithEntry > 0
-                ? `${todayEntries.length - todayWithEntry} customers not yet entered`
+              {remaining > 0
+                ? `${remaining} customer${remaining > 1 ? "s" : ""} not yet entered`
                 : "All entries recorded for today!"}
             </p>
           </div>
@@ -147,11 +153,11 @@ export default async function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {todayEntries.length === 0 ? (
+              {todayList.length === 0 ? (
                 <div className="text-center py-6 text-gray-400 text-sm">No active customers</div>
               ) : (
                 <div className="space-y-1">
-                  {todayEntries.slice(0, 7).map(({ customer, entry }) => (
+                  {todayList.slice(0, 7).map(({ customer, entry }) => (
                     <div
                       key={customer.id}
                       className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors"
@@ -173,10 +179,10 @@ export default async function DashboardPage() {
                       )}
                     </div>
                   ))}
-                  {todayEntries.length > 7 && (
+                  {todayList.length > 7 && (
                     <Link href="/daily-entry" className="block">
                       <p className="text-xs text-blue-500 hover:text-blue-700 text-center pt-2 transition-colors">
-                        View all {todayEntries.length} customers →
+                        View all {todayList.length} customers →
                       </p>
                     </Link>
                   )}

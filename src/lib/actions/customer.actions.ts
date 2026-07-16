@@ -1,14 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import {
   createCustomerSchema,
   updateCustomerSchema,
   bulkUpdateCustomersSchema,
   CustomerPatchInput,
 } from "@/lib/schemas/customer.schema";
-import { createCustomer, updateCustomer, toggleCustomerStatus, deleteCustomer, bulkUpdateCustomers } from "@/lib/services/customer.service";
+import { createCustomer, updateCustomer, toggleCustomerStatus, deleteCustomer, restoreCustomer, bulkUpdateCustomers } from "@/lib/services/customer.service";
 import { sendPaymentReminder } from "@/lib/services/whatsapp.service";
 import { ActionResult } from "@/types";
 
@@ -128,12 +127,39 @@ export async function sendPaymentReminderAction(id: string): Promise<ActionResul
   }
 }
 
+/**
+ * Archive (soft delete) a customer. Nothing is removed from the database — the
+ * customer and all their bills/entries/payments are just hidden from the UI and
+ * can be restored. Revalidates every surface where their data would otherwise
+ * still appear.
+ */
 export async function deleteCustomerAction(id: string): Promise<ActionResult<void>> {
   try {
     await deleteCustomer(id);
-    revalidatePath("/customers");
-    redirect("/customers");
+    revalidateCustomerSurfaces(id);
+    return { success: true, data: undefined };
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : "Failed to delete customer" };
+    return { success: false, error: error instanceof Error ? error.message : "Failed to archive customer" };
   }
+}
+
+/** Restore a previously archived customer (and their retained history). */
+export async function restoreCustomerAction(id: string): Promise<ActionResult<void>> {
+  try {
+    await restoreCustomer(id);
+    revalidateCustomerSurfaces(id);
+    return { success: true, data: undefined };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Failed to restore customer" };
+  }
+}
+
+/** Every page whose data changes when a customer is archived or restored. */
+function revalidateCustomerSurfaces(id: string) {
+  revalidatePath("/customers");
+  revalidatePath(`/customers/${id}`);
+  revalidatePath("/customer-manager");
+  revalidatePath("/dashboard");
+  revalidatePath("/billing");
+  revalidatePath("/reports");
 }

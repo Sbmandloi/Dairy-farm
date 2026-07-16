@@ -2,24 +2,38 @@ import { prisma } from "@/lib/db";
 import { getSettings } from "./settings.service";
 import { generateInvoiceNumber } from "@/lib/utils/invoice-number";
 
+/**
+ * Bills for a period that should be surfaced to the user (listed, printed).
+ *
+ * Only ACTIVE, non-archived customers — matching who bills are generated for in
+ * the first place. A customer billed while active and later deactivated still
+ * has the bill in the database (and their dues still show in the customer
+ * manager / dashboard, where collecting matters), but they are not re-printed
+ * or re-sent as part of the month's run.
+ */
 export async function getBillsForPeriod(periodStart: Date, periodEnd: Date) {
   return prisma.bill.findMany({
-    where: { periodStart, periodEnd },
+    where: {
+      periodStart,
+      periodEnd,
+      customer: { isActive: true, deletedAt: null },
+    },
     include: { customer: true, payments: true },
     orderBy: { customer: { name: "asc" } },
   });
 }
 
 export async function getCustomersWithBillsForPeriod(periodStart: Date, periodEnd: Date) {
-  const customers = await prisma.customer.findMany({
-    where: { isActive: true },
-    orderBy: { name: "asc" },
-  });
-
-  const bills = await prisma.bill.findMany({
-    where: { periodStart, periodEnd },
-    include: { payments: true },
-  });
+  const [customers, bills] = await Promise.all([
+    prisma.customer.findMany({
+      where: { isActive: true, deletedAt: null },
+      orderBy: { name: "asc" },
+    }),
+    prisma.bill.findMany({
+      where: { periodStart, periodEnd, customer: { isActive: true, deletedAt: null } },
+      include: { payments: true },
+    }),
+  ]);
 
   const billMap = new Map(bills.map((b) => [b.customerId, b]));
   return customers.map((c) => ({ customer: c, bill: billMap.get(c.id) ?? null }));
@@ -37,9 +51,10 @@ export async function generateBillsForPeriod(
   periodEnd: Date,
   customerId?: string
 ) {
-  const customers = customerId
-    ? await prisma.customer.findMany({ where: { id: customerId, isActive: true } })
-    : await prisma.customer.findMany({ where: { isActive: true } });
+  // Archived (soft-deleted) customers must never be billed.
+  const customers = await prisma.customer.findMany({
+    where: { isActive: true, deletedAt: null, ...(customerId ? { id: customerId } : {}) },
+  });
 
   const settings = await getSettings();
 
@@ -217,53 +232,15 @@ export async function createManualBill(data: {
 
 export async function getPendingBills() {
   return prisma.bill.findMany({
-    where: { status: { in: ["GENERATED", "SENT", "PARTIALLY_PAID"] } },
+    where: {
+      status: { in: ["GENERATED", "SENT", "PARTIALLY_PAID"] },
+      // Hide bills belonging to archived (soft-deleted) customers.
+      customer: { deletedAt: null },
+    },
     include: { customer: true, payments: true },
     orderBy: { createdAt: "desc" },
   });
 }
 
-export async function getDashboardStats() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-  const [todayAgg, monthAgg, activeCustomers, pendingBills] = await Promise.all([
-    prisma.dailyMilkEntry.aggregate({
-      where: { date: today },
-      _sum: { totalLiters: true },
-    }),
-    prisma.dailyMilkEntry.aggregate({
-      where: { date: { gte: monthStart, lte: monthEnd } },
-      _sum: { totalLiters: true },
-    }),
-    prisma.customer.count({ where: { isActive: true } }),
-    prisma.bill.findMany({
-      where: { status: { in: ["GENERATED", "SENT", "PARTIALLY_PAID"] } },
-      select: { totalAmount: true, payments: { select: { amountPaid: true } } },
-    }),
-  ]);
-
-  const settings = await getSettings();
-  const price = parseFloat(String(settings.globalPricePerLiter));
-
-  const todayLiters = parseFloat(String(todayAgg._sum.totalLiters ?? 0));
-  const monthLiters = parseFloat(String(monthAgg._sum.totalLiters ?? 0));
-
-  const pendingAmount = pendingBills.reduce((sum, b) => {
-    const paid = b.payments.reduce((s, p) => s + parseFloat(String(p.amountPaid)), 0);
-    return sum + (parseFloat(String(b.totalAmount)) - paid);
-  }, 0);
-
-  return {
-    todayLiters,
-    todayRevenue: todayLiters * price,
-    monthLiters,
-    monthRevenue: monthLiters * price,
-    activeCustomers,
-    pendingBills: pendingBills.length,
-    pendingAmount,
-  };
-}
+// Dashboard aggregation moved to dashboard.service.ts (getDashboardData),
+// which computes revenue per-customer instead of with a single global price.

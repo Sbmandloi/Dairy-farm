@@ -21,12 +21,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const buffer = await generatePdfBuffer(bill as BillWithCustomer);
     const filename = `${bill.invoiceNumber}.pdf`;
 
+    // ?inline=1 renders the bill in the preview dialog instead of downloading it,
+    // so it can be checked before sending on WhatsApp.
+    const inline = req.nextUrl.searchParams.get("inline") === "1";
+
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${filename}"`,
         "Content-Length": String(buffer.length),
+        // Never cache: the bill reflects live payments/amounts.
+        "Cache-Control": "no-store",
       },
     });
   } catch (error) {

@@ -1,28 +1,68 @@
 import React from "react";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import path from "path";
+import { Document, Page, Text, View, StyleSheet, Font } from "@react-pdf/renderer";
 import { BillWithCustomer } from "@/types";
-import { formatDate, formatLiters, decimalToNumber } from "@/lib/utils/format";
+import { decimalToNumber } from "@/lib/utils/format";
 
 /**
- * Money for the PDF. Not formatCurrency: the rupee sign is missing from the
- * built-in Helvetica the renderer uses, so "₹900.00" prints as a stray glyph or
- * nothing at all. "Rs." is what the WhatsApp caption already says.
+ * The bill is printed in Hindi, so the built-in Helvetica is not usable — it has
+ * no Devanagari glyphs (nor the ₹ sign). Noto Sans Devanagari covers Devanagari,
+ * Latin and ₹, so names/addresses in either script and the amounts all render
+ * from a single family.
  */
-function money(amount: number): string {
-  return `Rs. ${new Intl.NumberFormat("en-IN", {
+const FONT_DIR = path.join(process.cwd(), "public", "fonts");
+Font.register({
+  family: "NotoDev",
+  fonts: [
+    { src: path.join(FONT_DIR, "NotoSansDevanagari-Regular.ttf"), fontWeight: "normal" },
+    { src: path.join(FONT_DIR, "NotoSansDevanagari-Bold.ttf"), fontWeight: "bold" },
+  ],
+});
+// Devanagari words must not be hyphen-split mid-cluster.
+Font.registerHyphenationCallback((word) => [word]);
+
+/** Hindi month names, indexed 0-11 — shared with the multi-month statement. */
+export const HINDI_MONTHS = [
+  "जनवरी", "फरवरी", "मार्च", "अप्रैल", "मई", "जून",
+  "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर",
+];
+
+/** Amounts stay in English (Latin) digits with Indian grouping — e.g. ₹1,250.50. */
+export function money(amount: number): string {
+  return `₹${new Intl.NumberFormat("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount)}`;
 }
 
-// Types for entries and settings passed in
-type Entry = {
-  id: string;
-  date: Date;
-  morningLiters: unknown;
-  eveningLiters: unknown;
-  totalLiters: unknown;
-};
+/** Quantity in Latin digits with a Hindi unit. */
+export function litres(n: number): string {
+  return `${n.toFixed(1)} लीटर`;
+}
+
+/**
+ * Dates are printed numerically ("16/07/2026"), NOT with Hindi month names.
+ *
+ * This is deliberate: react-pdf drops the final character of a string that
+ * alternates scripts more than once — "दिनांक: 16 जुलाई 2026" renders as
+ * "…जुलाई 202" (verified: it truncates even with a full page of free space, so
+ * it is a shaping bug, not clipping). A numeric date keeps the string to a
+ * single Devanagari→Latin switch, which renders correctly, and keeps the digits
+ * in English as intended. Do not "improve" this back to month names without
+ * re-testing that truncation.
+ *
+ * timeZone UTC because `@db.Date` values come back anchored at UTC midnight —
+ * formatting them in the server's local zone could show the previous day.
+ */
+export function billDate(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
 
 type InvoiceSettings = {
   farmName: string;
@@ -43,9 +83,9 @@ const c = {
 };
 
 const styles = StyleSheet.create({
-  page: { padding: 32, fontSize: 11, fontFamily: "Helvetica", color: c.text },
+  page: { padding: 32, fontSize: 11, fontFamily: "NotoDev", color: c.text },
 
-  // Header
+  // Header — dairy farm identity
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -55,35 +95,87 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     marginBottom: 18,
   },
-  farmName: { fontSize: 20, fontFamily: "Helvetica-Bold", color: c.blue },
+  // flexShrink 0 + a floor width: without it the row squeezes the meta column and
+  // clips the period/date text ("31 जुलाई 20…").
+  headerLeft: { flex: 1, paddingRight: 12 },
+  farmName: { fontSize: 19, fontWeight: "bold", color: c.blue },
   farmInfo: { fontSize: 9, color: c.gray, marginTop: 3 },
-  invoiceMeta: { alignItems: "flex-end" },
-  invoiceNo: { fontSize: 15, fontFamily: "Helvetica-Bold" },
-  invoiceDate: { fontSize: 9, color: c.gray, marginTop: 2 },
+  metaBox: { alignItems: "flex-end", flexShrink: 0, minWidth: 190 },
+  billTitle: { fontSize: 14, fontWeight: "bold", color: c.text },
+  invoiceNo: { fontSize: 13, fontWeight: "bold", marginTop: 2 },
+  metaLine: { fontSize: 9, color: c.gray, marginTop: 2 },
 
-  // Section
   section: { marginBottom: 16 },
   sectionTitle: {
-    fontSize: 8,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 9,
+    fontWeight: "bold",
     color: c.gray,
     marginBottom: 5,
-    letterSpacing: 0.5,
   },
 
-  // Bill To
+  // Bill to
   billTo: { backgroundColor: c.bgLight, padding: 10, borderRadius: 4 },
-  billToName: { fontFamily: "Helvetica-Bold", fontSize: 12 },
-  billToInfo: { fontSize: 10, color: c.sub, marginTop: 2 },
+  billToRow: { flexDirection: "row", marginTop: 2 },
+  billToLabel: { width: 90, fontSize: 10, color: c.gray },
+  billToValue: { fontSize: 10, color: c.text, flex: 1 },
+  billToName: { fontSize: 12, fontWeight: "bold" },
 
-  // Table
+  // Summary (main content — no date-wise breakdown)
+  summary: { borderWidth: 1, borderColor: c.lightGray, borderRadius: 6 },
+  sumHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: c.blue,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  sumHeaderText: { color: "#ffffff", fontSize: 10, fontWeight: "bold" },
+  sumRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: c.lightGray,
+  },
+  sumRowAlt: { backgroundColor: c.bgRow },
+  sumLabel: { fontSize: 11 },
+  sumValue: { fontSize: 11, fontWeight: "bold" },
+  sumPaidLabel: { fontSize: 11, color: c.green },
+  sumPaidValue: { fontSize: 11, fontWeight: "bold", color: c.green },
+
+  dueRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#fef2f2",
+  },
+  dueRowSettled: { backgroundColor: "#dcfce7" },
+  dueText: { fontSize: 13, fontWeight: "bold", color: c.red },
+  settledText: { fontSize: 13, fontWeight: "bold", color: c.green },
+
+  paidStamp: {
+    marginTop: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+    backgroundColor: "#dcfce7",
+    color: c.green,
+    fontSize: 10,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+
+  // Payments received
   tableHeader: {
     flexDirection: "row",
-    backgroundColor: c.blue,
+    backgroundColor: c.bgLight,
     paddingHorizontal: 8,
     paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: c.lightGray,
   },
-  tableHeaderText: { color: "white", fontSize: 10, fontFamily: "Helvetica-Bold" },
+  tableHeaderText: { fontSize: 9, fontWeight: "bold", color: c.sub },
   tableRow: {
     flexDirection: "row",
     paddingHorizontal: 8,
@@ -91,59 +183,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: c.lightGray,
   },
-  tableRowEven: { backgroundColor: c.bgRow },
   tableCell: { fontSize: 10 },
-  colDate: { width: "30%" },
-  colMorning: { width: "25%" },
-  colEvening: { width: "25%" },
-  colTotal: { width: "20%", fontFamily: "Helvetica-Bold" },
-
-  // Payments received
   colPayDate: { width: "30%" },
-  colPayNote: { width: "50%" },
-  colPayAmount: { width: "20%", fontFamily: "Helvetica-Bold", textAlign: "right" },
+  colPayNote: { width: "45%" },
+  colPayAmount: { width: "25%", textAlign: "right", fontWeight: "bold", color: c.green },
 
-  // Summary
-  summaryBox: {
-    marginTop: 16,
-    borderWidth: 2,
-    borderColor: c.blue,
-    borderRadius: 6,
-    padding: 12,
-    width: 250,
-    alignSelf: "flex-end",
-  },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 5,
-    fontSize: 11,
-  },
-  summarySubTotalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 5,
-    fontSize: 11,
-    fontFamily: "Helvetica-Bold",
-  },
-  summaryPaidText: { fontSize: 11, fontFamily: "Helvetica-Bold", color: c.green },
-  summaryDivider: { borderTopWidth: 1, borderTopColor: c.lightGray, marginVertical: 4 },
-  summaryTotalRow: { flexDirection: "row", justifyContent: "space-between", paddingTop: 4 },
-  summaryTotalText: { fontSize: 13, fontFamily: "Helvetica-Bold", color: c.blue },
-  summaryDueText: { fontSize: 13, fontFamily: "Helvetica-Bold", color: c.red },
-  summarySettledText: { fontSize: 13, fontFamily: "Helvetica-Bold", color: c.green },
-  paidStamp: {
-    marginTop: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    backgroundColor: "#dcfce7",
-    color: c.green,
-    fontSize: 10,
-    fontFamily: "Helvetica-Bold",
-    textAlign: "center",
-  },
-
-  // Footer
   footer: {
     position: "absolute",
     bottom: 20,
@@ -158,118 +202,132 @@ const styles = StyleSheet.create({
   },
 });
 
+/**
+ * Shared with the multi-month statement so both documents read as the same
+ * family (same header, bill-to block, totals framing and footer).
+ */
+export const billStyles = styles;
+
 interface InvoiceDocumentProps {
   bill: BillWithCustomer;
-  entries: Entry[];
   settings: InvoiceSettings;
 }
 
-export function InvoiceDocument({ bill, entries, settings }: InvoiceDocumentProps) {
-  // An invoice must be a complete statement: what was billed, what has already
-  // been collected against it, and what is actually left to pay.
+/**
+ * One bill as a single A4 page.
+ *
+ * Called as a plain function (not rendered as a <Component/>) so the element it
+ * returns IS a <Page>: react-pdf requires <Document> children to be Pages, so
+ * this can be reused for both a single bill and a batched print-all document.
+ */
+function billPage(bill: BillWithCustomer, settings: InvoiceSettings) {
   const payments = [...(bill.payments ?? [])].sort(
     (a, b) => new Date(a.paidOn).getTime() - new Date(b.paidOn).getTime()
   );
+  const totalQty = decimalToNumber(bill.totalLiters);
   const billAmount = decimalToNumber(bill.totalAmount);
   const amountPaid = payments.reduce((s, p) => s + decimalToNumber(p.amountPaid), 0);
   const balanceDue = Math.max(0, billAmount - amountPaid);
   const settled = balanceDue <= 0.01;
 
   return (
-    <Document>
-      <Page size="A4" style={styles.page}>
-        {/* Header */}
+      <Page key={bill.id} size="A4" style={styles.page}>
+        {/* ── Dairy farm details + invoice meta ── */}
         <View style={styles.header}>
-          <View>
+          <View style={styles.headerLeft}>
             <Text style={styles.farmName}>{settings.farmName}</Text>
             {settings.farmAddress ? (
               <Text style={styles.farmInfo}>{settings.farmAddress}</Text>
             ) : null}
             {settings.farmPhone ? (
-              <Text style={styles.farmInfo}>Phone: {settings.farmPhone}</Text>
+              <Text style={styles.farmInfo}>संपर्क: {settings.farmPhone}</Text>
             ) : null}
           </View>
-          <View style={styles.invoiceMeta}>
+          <View style={styles.metaBox}>
+            <Text style={styles.billTitle}>दूध बिल</Text>
             <Text style={styles.invoiceNo}>{bill.invoiceNumber}</Text>
-            <Text style={styles.invoiceDate}>Date: {formatDate(new Date())}</Text>
-            <Text style={styles.invoiceDate}>
-              Period: {formatDate(bill.periodStart)} - {formatDate(bill.periodEnd)}
+            <Text style={styles.metaLine}>दिनांक: {billDate(new Date())}</Text>
+            <Text style={styles.metaLine}>
+              अवधि: {billDate(bill.periodStart)} – {billDate(bill.periodEnd)}
             </Text>
           </View>
         </View>
 
-        {/* Bill To */}
+        {/* ── Bill to ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>BILL TO</Text>
+          <Text style={styles.sectionTitle}>बिल प्राप्तकर्ता</Text>
           <View style={styles.billTo}>
             <Text style={styles.billToName}>{bill.customer.name}</Text>
             {bill.customer.phoneNumber ? (
-              <Text style={styles.billToInfo}>{bill.customer.phoneNumber}</Text>
+              <View style={styles.billToRow}>
+                <Text style={styles.billToLabel}>संपर्क नंबर:</Text>
+                <Text style={styles.billToValue}>{bill.customer.phoneNumber}</Text>
+              </View>
             ) : null}
             {bill.customer.address ? (
-              <Text style={styles.billToInfo}>{bill.customer.address}</Text>
+              <View style={styles.billToRow}>
+                <Text style={styles.billToLabel}>पता:</Text>
+                <Text style={styles.billToValue}>{bill.customer.address}</Text>
+              </View>
             ) : null}
           </View>
         </View>
 
-        {/* Entries Table */}
+        {/* ── Bill summary (no date-wise breakdown) ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>DATE-WISE BREAKDOWN</Text>
-          <View>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.tableHeaderText, styles.colDate]}>Date</Text>
-              <Text style={[styles.tableHeaderText, styles.colMorning]}>Morning</Text>
-              <Text style={[styles.tableHeaderText, styles.colEvening]}>Evening</Text>
-              <Text style={[styles.tableHeaderText, styles.colTotal]}>Total</Text>
+          <Text style={styles.sectionTitle}>बिल विवरण</Text>
+          <View style={styles.summary}>
+            <View style={styles.sumHeader}>
+              <Text style={styles.sumHeaderText}>विवरण</Text>
+              <Text style={styles.sumHeaderText}>राशि</Text>
             </View>
-            {entries.length > 0 ? (
-              entries.map((e, i) => {
-                const morning = decimalToNumber(e.morningLiters);
-                const evening = decimalToNumber(e.eveningLiters);
-                const total = decimalToNumber(e.totalLiters);
-                return (
-                  <View
-                    key={e.id}
-                    style={[styles.tableRow, i % 2 === 1 ? styles.tableRowEven : {}]}
-                  >
-                    <Text style={[styles.tableCell, styles.colDate]}>{formatDate(e.date)}</Text>
-                    <Text style={[styles.tableCell, styles.colMorning]}>
-                      {morning > 0 ? formatLiters(morning) : "-"}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.colEvening]}>
-                      {evening > 0 ? formatLiters(evening) : "-"}
-                    </Text>
-                    <Text style={[styles.tableCell, styles.colTotal]}>{formatLiters(total)}</Text>
-                  </View>
-                );
-              })
-            ) : (
-              <View style={styles.tableRow}>
-                <Text style={{ fontSize: 10, color: c.gray, width: "100%", textAlign: "center" }}>
-                  No entries found
-                </Text>
-              </View>
-            )}
+
+            <View style={styles.sumRow}>
+              <Text style={styles.sumLabel}>कुल मात्रा</Text>
+              <Text style={styles.sumValue}>{litres(totalQty)}</Text>
+            </View>
+
+            <View style={[styles.sumRow, styles.sumRowAlt]}>
+              <Text style={styles.sumLabel}>दर (प्रति लीटर)</Text>
+              <Text style={styles.sumValue}>{money(decimalToNumber(bill.pricePerLiter))}</Text>
+            </View>
+
+            <View style={styles.sumRow}>
+              <Text style={styles.sumLabel}>कुल बिल राशि</Text>
+              <Text style={styles.sumValue}>{money(billAmount)}</Text>
+            </View>
+
+            <View style={[styles.sumRow, styles.sumRowAlt]}>
+              <Text style={styles.sumPaidLabel}>भुगतान प्राप्त</Text>
+              <Text style={styles.sumPaidValue}>
+                {amountPaid > 0.01 ? `- ${money(amountPaid)}` : money(0)}
+              </Text>
+            </View>
+
+            <View style={[styles.dueRow, settled ? styles.dueRowSettled : {}]}>
+              <Text style={settled ? styles.settledText : styles.dueText}>शेष राशि</Text>
+              <Text style={settled ? styles.settledText : styles.dueText}>{money(balanceDue)}</Text>
+            </View>
           </View>
+          {settled ? (
+            <Text style={styles.paidStamp}>पूर्ण भुगतान प्राप्त – धन्यवाद</Text>
+          ) : null}
         </View>
 
-        {/* Payments already collected against this bill */}
+        {/* ── Payments received against this bill ── */}
         {payments.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>PAYMENTS RECEIVED</Text>
+            <Text style={styles.sectionTitle}>प्राप्त भुगतान</Text>
             <View>
               <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderText, styles.colPayDate]}>Date</Text>
-                <Text style={[styles.tableHeaderText, styles.colPayNote]}>Note</Text>
-                <Text style={[styles.tableHeaderText, styles.colPayAmount]}>Amount</Text>
+                <Text style={[styles.tableHeaderText, styles.colPayDate]}>दिनांक</Text>
+                <Text style={[styles.tableHeaderText, styles.colPayNote]}>विवरण</Text>
+                <Text style={[styles.tableHeaderText, styles.colPayAmount]}>राशि</Text>
               </View>
-              {payments.map((p, i) => (
-                <View
-                  key={p.id}
-                  style={[styles.tableRow, i % 2 === 1 ? styles.tableRowEven : {}]}
-                >
-                  <Text style={[styles.tableCell, styles.colPayDate]}>{formatDate(p.paidOn)}</Text>
-                  <Text style={[styles.tableCell, styles.colPayNote]}>{p.note || "-"}</Text>
+              {payments.map((p) => (
+                <View key={p.id} style={styles.tableRow}>
+                  <Text style={[styles.tableCell, styles.colPayDate]}>{billDate(p.paidOn)}</Text>
+                  <Text style={[styles.tableCell, styles.colPayNote]}>{p.note || "—"}</Text>
                   <Text style={[styles.tableCell, styles.colPayAmount]}>
                     {money(decimalToNumber(p.amountPaid))}
                   </Text>
@@ -279,42 +337,26 @@ export function InvoiceDocument({ bill, entries, settings }: InvoiceDocumentProp
           </View>
         ) : null}
 
-        {/* Summary Box */}
-        <View style={styles.summaryBox}>
-          <View style={styles.summaryRow}>
-            <Text>Total Liters</Text>
-            <Text>{formatLiters(decimalToNumber(bill.totalLiters))}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text>Price / Liter</Text>
-            <Text>{money(decimalToNumber(bill.pricePerLiter))}</Text>
-          </View>
-          <View style={styles.summaryDivider} />
-          <View style={styles.summarySubTotalRow}>
-            <Text>Total Bill Amount</Text>
-            <Text>{money(billAmount)}</Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryPaidText}>Amount Paid</Text>
-            <Text style={styles.summaryPaidText}>- {money(amountPaid)}</Text>
-          </View>
-          <View style={styles.summaryDivider} />
-          <View style={styles.summaryTotalRow}>
-            <Text style={settled ? styles.summarySettledText : styles.summaryDueText}>
-              BALANCE DUE
-            </Text>
-            <Text style={settled ? styles.summarySettledText : styles.summaryDueText}>
-              {money(balanceDue)}
-            </Text>
-          </View>
-          {settled ? <Text style={styles.paidStamp}>PAID IN FULL - THANK YOU</Text> : null}
-        </View>
-
-        {/* Footer */}
-        <Text style={styles.footer}>
-          Thank you for your business! - {settings.farmName}
-        </Text>
+        <Text style={styles.footer}>धन्यवाद! – {settings.farmName}</Text>
       </Page>
-    </Document>
   );
+}
+
+/** A single bill. */
+export function InvoiceDocument({ bill, settings }: InvoiceDocumentProps) {
+  return <Document>{billPage(bill, settings)}</Document>;
+}
+
+/**
+ * Every bill for a period in one document — one bill per page — so the whole
+ * month can be printed or saved in a single file.
+ */
+export function BillsBatchDocument({
+  bills,
+  settings,
+}: {
+  bills: BillWithCustomer[];
+  settings: InvoiceSettings;
+}) {
+  return <Document>{bills.map((bill) => billPage(bill, settings))}</Document>;
 }

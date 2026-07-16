@@ -1,9 +1,12 @@
 import { getSettings } from "./settings.service";
 import { getBillById } from "./billing.service";
-import { generatePdfBuffer } from "./pdf.service";
+import { buildCustomerStatement } from "./statement.service";
+import { generatePdfBuffer, generateStatementPdfBuffer } from "./pdf.service";
+import { HINDI_MONTHS } from "@/lib/templates/invoice";
 import { prisma } from "@/lib/db";
 import { decrypt } from "@/lib/utils/encryption";
 import { toGreenApiChatId } from "@/lib/utils/phone";
+import { formatCurrency } from "@/lib/utils/format";
 import { BillWithCustomer } from "@/types";
 
 // Green API base URL: https://api.green-api.com/waInstance{idInstance}/{method}/{apiTokenInstance}
@@ -106,11 +109,15 @@ export async function sendPaymentReminder(customerId: string): Promise<string> {
   const { idInstance, apiToken } = await getGreenApiConfig();
   const settings = await getSettings();
 
+  // Reminder text is in Hindi (Devanagari), but the amount stays in English
+  // (Latin) digits — e.g. "₹1,250.00" — so the number is universally readable.
+  // Customer name and farm name are kept verbatim (usually already Latin).
+  const amount = formatCurrency(pending);
   const message =
-    `Dear ${customer.name},\n\n` +
-    `This is a gentle reminder that Rs.${pending.toFixed(2)} is pending on your milk account.\n\n` +
-    `Kindly arrange the payment at your convenience.\n\n` +
-    `Thank you,\n${settings.farmName}`;
+    `नमस्ते ${customer.name} जी,\n\n` +
+    `यह एक विनम्र स्मरण है कि आपके दूध खाते पर ${amount} बकाया है।\n\n` +
+    `कृपया अपनी सुविधानुसार भुगतान कर दें।\n\n` +
+    `धन्यवाद,\n${settings.farmName}`;
 
   const msgId = await sendTextMessage(
     idInstance,
@@ -125,6 +132,66 @@ export async function sendPaymentReminder(customerId: string): Promise<string> {
   });
 
   return msgId;
+}
+
+/**
+ * Send a consolidated multi-month statement as a single PDF.
+ *
+ * Unlike sendBillViaWhatsApp this does NOT mark the individual monthly bills as
+ * SENT — a statement is a summary across months, and flipping several bills'
+ * status from one message would misreport what was actually delivered for each
+ * month. The caption is in Hindi with amounts in English digits, matching the
+ * document.
+ */
+export async function sendStatementViaWhatsApp(
+  customerId: string,
+  monthKeys: string[],
+  notes?: string | null
+): Promise<string> {
+  const statement = await buildCustomerStatement(customerId, monthKeys, notes);
+
+  if (statement.months.length === 0) {
+    throw new Error("No milk entries in the selected month(s) — nothing to send.");
+  }
+  if (!statement.customer.phoneNumber) {
+    throw new Error(`${statement.customer.name} has no phone number.`);
+  }
+
+  const { idInstance, apiToken } = await getGreenApiConfig();
+  const settings = await getSettings();
+  const pdfBuffer = await generateStatementPdfBuffer(statement);
+
+  const first = statement.months[0];
+  const last = statement.months[statement.months.length - 1];
+  const span =
+    statement.months.length === 1
+      ? `${HINDI_MONTHS[first.month - 1]} ${first.year}`
+      : `${HINDI_MONTHS[first.month - 1]} ${first.year} – ${HINDI_MONTHS[last.month - 1]} ${last.year}`;
+
+  const caption =
+    `नमस्ते ${statement.customer.name} जी,\n\n` +
+    `${span} का दूध बिल संलग्न है।\n\n` +
+    `कुल मात्रा: ${statement.totals.liters.toFixed(1)} लीटर\n` +
+    `कुल बिल राशि: ${formatCurrency(statement.totals.amount)}\n` +
+    (statement.totals.paid > 0.01
+      ? `भुगतान प्राप्त: ${formatCurrency(statement.totals.paid)}\n`
+      : "") +
+    (statement.totals.due > 0.01
+      ? `शेष राशि: ${formatCurrency(statement.totals.due)}`
+      : `शेष राशि: ${formatCurrency(0)} – पूर्ण भुगतान प्राप्त, धन्यवाद!`) +
+    `\n\nधन्यवाद,\n${settings.farmName}`;
+
+  const safeName = statement.customer.name.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase();
+  const fileName = `bill-${safeName}-${monthKeys[0]}.pdf`;
+
+  return sendPdfBuffer(
+    idInstance,
+    apiToken,
+    toGreenApiChatId(statement.customer.phoneNumber),
+    pdfBuffer,
+    fileName,
+    caption
+  );
 }
 
 export async function sendBillViaWhatsApp(billId: string): Promise<string> {
@@ -179,18 +246,35 @@ export async function sendBillViaWhatsApp(billId: string): Promise<string> {
 
 export async function sendAllBillsWhatsApp(periodStart: Date, periodEnd: Date) {
   const bills = await prisma.bill.findMany({
-    where: { periodStart, periodEnd, status: { in: ["GENERATED", "PARTIALLY_PAID"] } },
+    where: {
+      periodStart,
+      periodEnd,
+      status: { in: ["GENERATED", "PARTIALLY_PAID"] },
+      // Only active, non-archived customers get the month's bulk send — matching
+      // who bills are generated and printed for. Anyone without a phone number is
+      // skipped here rather than failing the whole batch on them.
+      customer: { isActive: true, deletedAt: null, phoneNumber: { not: null } },
+    },
     include: { customer: true, payments: true },
+    orderBy: { customer: { name: "asc" } },
   });
 
+  // Sent one at a time so a single bad number can't fail the whole run — each
+  // outcome is reported back with the customer's name.
   const results = [];
   for (const bill of bills) {
     try {
       const msgId = await sendBillViaWhatsApp(bill.id);
-      results.push({ billId: bill.id, success: true, msgId });
+      results.push({
+        billId: bill.id,
+        customerName: bill.customer.name,
+        success: true,
+        msgId,
+      });
     } catch (error) {
       results.push({
         billId: bill.id,
+        customerName: bill.customer.name,
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
       });

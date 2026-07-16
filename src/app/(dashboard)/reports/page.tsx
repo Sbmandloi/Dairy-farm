@@ -3,19 +3,34 @@ import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatCurrency, formatLiters, formatDate, formatMonth, decimalToNumber } from "@/lib/utils/format";
-import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from "@/lib/constants";
-import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { BackupDownloads } from "@/components/reports/backup-downloads";
+import { cn } from "@/lib/utils";
+import {
+  Receipt,
+  Droplets,
+  IndianRupee,
+  CheckCircle2,
+  AlertCircle,
+  BarChart3,
+  Trophy,
+  Wallet,
+  Archive,
+} from "lucide-react";
 
 export default async function ReportsPage() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
+  // Reports exclude archived (soft-deleted) customers everywhere.
+  const liveCustomer = { customer: { deletedAt: null } };
+  const liveViaBill = { bill: { customer: { deletedAt: null } } };
+
   // Last 12 months billing summary
   const monthlySummary = await prisma.bill.groupBy({
     by: ["periodStart"],
+    where: liveCustomer,
     _sum: { totalAmount: true, totalLiters: true },
     _count: true,
     orderBy: { periodStart: "desc" },
@@ -24,6 +39,7 @@ export default async function ReportsPage() {
 
   // Recent payments
   const recentPayments = await prisma.payment.findMany({
+    where: liveViaBill,
     take: 20,
     orderBy: { createdAt: "desc" },
     include: { bill: { include: { customer: true } } },
@@ -32,7 +48,7 @@ export default async function ReportsPage() {
   // Current month top customers
   const topCustomers = await prisma.dailyMilkEntry.groupBy({
     by: ["customerId"],
-    where: { date: { gte: monthStart, lte: monthEnd } },
+    where: { date: { gte: monthStart, lte: monthEnd }, ...liveCustomer },
     _sum: { totalLiters: true },
     orderBy: { _sum: { totalLiters: "desc" } },
     take: 10,
@@ -44,13 +60,20 @@ export default async function ReportsPage() {
 
   // Overall stats
   const totalAllTime = await prisma.bill.aggregate({
+    where: liveCustomer,
     _sum: { totalAmount: true, totalLiters: true },
     _count: true,
   });
 
   const totalPayments = await prisma.payment.aggregate({
+    where: liveViaBill,
     _sum: { amountPaid: true },
   });
+
+  // Derived from the two aggregates already fetched — no extra query.
+  const allTimeOutstanding =
+    decimalToNumber(totalAllTime._sum.totalAmount) -
+    decimalToNumber(totalPayments._sum.amountPaid);
 
   // Build months list for backup tab
   const backupMonths = Array.from({ length: 12 }, (_, i) => {
@@ -88,29 +111,86 @@ export default async function ReportsPage() {
     <div>
       <Header title="Reports" />
       <div className="p-4 md:p-6 space-y-6">
-        {/* All-time stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Intro */}
+        <div className="flex items-start gap-3">
+          <div className="hidden sm:grid place-items-center w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex-shrink-0">
+            <BarChart3 className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900">Reports &amp; history</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              All-time performance, monthly trends, your best customers, and backups.
+            </p>
+          </div>
+        </div>
+
+        {/* All-time stats — outstanding is derived from the figures already shown */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {[
-            { label: "Total Bills", value: totalAllTime._count.toString() },
-            { label: "Total Liters", value: formatLiters(decimalToNumber(totalAllTime._sum.totalLiters)) },
-            { label: "Total Billed", value: formatCurrency(decimalToNumber(totalAllTime._sum.totalAmount)) },
-            { label: "Total Collected", value: formatCurrency(decimalToNumber(totalPayments._sum.amountPaid)) },
+            {
+              label: "Total Bills",
+              value: totalAllTime._count.toString(),
+              icon: Receipt,
+              tint: "bg-slate-50 border-slate-200 text-slate-500",
+            },
+            {
+              label: "Total Liters",
+              value: formatLiters(decimalToNumber(totalAllTime._sum.totalLiters)),
+              icon: Droplets,
+              tint: "bg-blue-50 border-blue-100 text-blue-500",
+            },
+            {
+              label: "Total Billed",
+              value: formatCurrency(decimalToNumber(totalAllTime._sum.totalAmount)),
+              icon: IndianRupee,
+              tint: "bg-violet-50 border-violet-100 text-violet-500",
+            },
+            {
+              label: "Total Collected",
+              value: formatCurrency(decimalToNumber(totalPayments._sum.amountPaid)),
+              icon: CheckCircle2,
+              tint: "bg-green-50 border-green-100 text-green-500",
+            },
+            {
+              label: "Outstanding",
+              value: formatCurrency(allTimeOutstanding),
+              icon: AlertCircle,
+              tint:
+                allTimeOutstanding > 0.01
+                  ? "bg-orange-50 border-orange-100 text-orange-500"
+                  : "bg-green-50 border-green-100 text-green-500",
+            },
           ].map((stat) => (
-            <Card key={stat.label} className="hover:shadow-sm transition-shadow">
-              <CardContent className="p-4 text-center">
-                <p className="text-xs text-gray-500 font-medium">{stat.label}</p>
-                <p className="text-xl font-bold text-gray-900 mt-1">{stat.value}</p>
-              </CardContent>
-            </Card>
+            <div key={stat.label} className={cn("border rounded-xl p-3.5 flex items-center gap-3", stat.tint)}>
+              <div className="w-9 h-9 rounded-lg bg-white/70 grid place-items-center flex-shrink-0">
+                <stat.icon className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide truncate">{stat.label}</p>
+                <p className="font-bold text-gray-900 truncate">{stat.value}</p>
+              </div>
+            </div>
           ))}
         </div>
 
         <Tabs defaultValue="monthly">
           <TabsList>
-            <TabsTrigger value="monthly">Monthly Summary</TabsTrigger>
-            <TabsTrigger value="top-customers">Top Customers</TabsTrigger>
-            <TabsTrigger value="payments">Recent Payments</TabsTrigger>
-            <TabsTrigger value="backup">Backup & Export</TabsTrigger>
+            <TabsTrigger value="monthly" className="gap-1.5">
+              <BarChart3 className="w-3.5 h-3.5" />
+              Monthly Summary
+            </TabsTrigger>
+            <TabsTrigger value="top-customers" className="gap-1.5">
+              <Trophy className="w-3.5 h-3.5" />
+              Top Customers
+            </TabsTrigger>
+            <TabsTrigger value="payments" className="gap-1.5">
+              <Wallet className="w-3.5 h-3.5" />
+              Recent Payments
+            </TabsTrigger>
+            <TabsTrigger value="backup" className="gap-1.5">
+              <Archive className="w-3.5 h-3.5" />
+              Backup &amp; Export
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="monthly" className="mt-4">
@@ -143,7 +223,13 @@ export default async function ReportsPage() {
                         </tr>
                       ))}
                       {monthlySummary.length === 0 && (
-                        <tr><td colSpan={4} className="text-center py-8 text-gray-400">No billing history</td></tr>
+                        <tr>
+                          <td colSpan={4} className="py-12 text-center text-gray-400">
+                            <BarChart3 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                            <p className="font-medium text-gray-500">No billing history yet</p>
+                            <p className="text-xs mt-1">Generate bills to see monthly trends here.</p>
+                          </td>
+                        </tr>
                       )}
                     </tbody>
                   </table>
@@ -170,9 +256,22 @@ export default async function ReportsPage() {
                     <tbody>
                       {topCustomers.map((row, i) => {
                         const customer = customerMap.get(row.customerId);
+                        // Medal colours for the top three, plain otherwise.
+                        const rankTint =
+                          i === 0
+                            ? "bg-amber-100 text-amber-700"
+                            : i === 1
+                              ? "bg-slate-200 text-slate-600"
+                              : i === 2
+                                ? "bg-orange-100 text-orange-700"
+                                : "bg-gray-50 text-gray-400";
                         return (
                           <tr key={row.customerId} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                            <td className="px-4 py-3 text-gray-400 font-medium">{i + 1}</td>
+                            <td className="px-4 py-3">
+                              <span className={cn("inline-grid place-items-center w-6 h-6 rounded-full text-xs font-bold", rankTint)}>
+                                {i + 1}
+                              </span>
+                            </td>
                             <td className="px-4 py-3">
                               <Link href={`/customers/${row.customerId}`} className="font-medium text-gray-900 hover:text-blue-600">
                                 {customer?.name || "Unknown"}
@@ -185,7 +284,12 @@ export default async function ReportsPage() {
                         );
                       })}
                       {topCustomers.length === 0 && (
-                        <tr><td colSpan={3} className="text-center py-8 text-gray-400">No entries this month</td></tr>
+                        <tr>
+                          <td colSpan={3} className="py-12 text-center text-gray-400">
+                            <Trophy className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                            <p className="font-medium text-gray-500">No entries this month</p>
+                          </td>
+                        </tr>
                       )}
                     </tbody>
                   </table>
@@ -226,7 +330,12 @@ export default async function ReportsPage() {
                         </tr>
                       ))}
                       {recentPayments.length === 0 && (
-                        <tr><td colSpan={4} className="text-center py-8 text-gray-400">No payments recorded</td></tr>
+                        <tr>
+                          <td colSpan={4} className="py-12 text-center text-gray-400">
+                            <Wallet className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                            <p className="font-medium text-gray-500">No payments recorded</p>
+                          </td>
+                        </tr>
                       )}
                     </tbody>
                   </table>

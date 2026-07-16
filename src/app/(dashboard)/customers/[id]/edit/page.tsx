@@ -3,6 +3,8 @@ import { getCustomerById } from "@/lib/services/customer.service";
 import { Header } from "@/components/layout/header";
 import { CustomerForm } from "@/components/customers/customer-form";
 import { decimalToNumber } from "@/lib/utils/format";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -27,6 +29,13 @@ export default async function EditCustomerPage({ params }: Props) {
     <div>
       <Header title="Edit Customer" />
       <div className="p-4 md:p-6">
+        <Link
+          href={`/customers/${id}`}
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-4"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to {customer.name}
+        </Link>
         <div className="mb-6">
           <h2 className="text-lg font-semibold text-gray-900">Edit {customer.name}</h2>
           <p className="text-sm text-gray-500 mt-1">Update customer information</p>

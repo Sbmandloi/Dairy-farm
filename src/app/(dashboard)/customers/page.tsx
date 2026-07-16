@@ -3,11 +3,16 @@ import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { Plus, Phone, MapPin, IndianRupee, Droplets, TrendingUp, Users, AlertCircle, Search, X } from "lucide-react";
+import { Plus, Phone, MapPin, IndianRupee, Droplets, TrendingUp, Users, AlertCircle, Search, X, Archive } from "lucide-react";
 import { formatCurrency, formatDate, decimalToNumber } from "@/lib/utils/format";
 import { CustomerToggleButton } from "@/components/customers/customer-status-badge";
 import { DeleteCustomerButton } from "@/components/customers/delete-customer-button";
+import { RestoreCustomerButton } from "@/components/customers/restore-customer-button";
 import { ExportButton } from "@/components/customers/export-button";
+import { AutoRefresh } from "@/components/dashboard/auto-refresh";
+
+// Always reflect live customer/billing state (stats update in real time).
+export const dynamic = "force-dynamic";
 
 function avatarColor(name: string) {
   const colors = [
@@ -32,11 +37,17 @@ export default async function CustomersPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const search = params.search || "";
   const status = params.status;
+  const isArchived = status === "archived";
 
-  const customers = await getCustomersWithStats({
-    active: status === "inactive" ? false : status === "active" ? true : undefined,
-    search,
-  });
+  const customers = await getCustomersWithStats(
+    isArchived
+      ? { archived: true, search }
+      : {
+          active: status === "inactive" ? false : status === "active" ? true : undefined,
+          search,
+        }
+  );
+  const generatedAt = Date.now();
 
   const totalLiters = customers.reduce((s, c) => s + c.stats.totalLiters, 0);
   const totalBilled = customers.reduce((s, c) => s + c.stats.totalBilled, 0);
@@ -45,7 +56,7 @@ export default async function CustomersPage({ searchParams }: PageProps) {
 
   return (
     <div>
-      <Header title="Customers" />
+      <Header title="Customers" actions={<AutoRefresh generatedAt={generatedAt} />} />
       <div className="p-4 md:p-6 space-y-5">
 
         {/* Summary stats */}
@@ -101,12 +112,15 @@ export default async function CustomersPage({ searchParams }: PageProps) {
               { label: "All", value: "" },
               { label: "Active", value: "active" },
               { label: "Inactive", value: "inactive" },
+              { label: "Archived", value: "archived" },
             ].map((f) => (
-              <Link key={f.value} href={`/customers?status=${f.value}&search=${search}`}>
+              <Link key={f.value} href={`/customers?status=${f.value}&search=${encodeURIComponent(search)}`}>
                 <Button
                   variant={status === f.value || (!status && f.value === "") ? "default" : "outline"}
                   size="sm"
+                  className={f.value === "archived" ? "gap-1" : undefined}
                 >
+                  {f.value === "archived" && <Archive className="w-3.5 h-3.5" />}
                   {f.label}
                 </Button>
               </Link>
@@ -158,12 +172,25 @@ export default async function CustomersPage({ searchParams }: PageProps) {
           </p>
         )}
 
+        {/* Archived view notice */}
+        {isArchived && (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <Archive className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <p>
+              Archived customers are hidden from the app but their full history is
+              kept in the database. Restore any of them to bring their data back.
+            </p>
+          </div>
+        )}
+
         {/* Customer grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {customers.map((c) => (
             <div
               key={c.id}
-              className="group bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-blue-200 transition-all duration-200"
+              className={`group bg-white border rounded-xl p-4 hover:shadow-md transition-all duration-200 ${
+                isArchived ? "border-amber-200 bg-amber-50/30" : "border-gray-200 hover:border-blue-200"
+              }`}
             >
               {/* Header */}
               <div className="flex items-start gap-3 mb-3">
@@ -179,9 +206,15 @@ export default async function CustomersPage({ searchParams }: PageProps) {
                     {c.name}
                   </Link>
                   <div className="flex items-center gap-2 mt-1">
-                    <Badge variant={c.isActive ? "success" : "secondary"} className="text-[10px]">
-                      {c.isActive ? "Active" : "Inactive"}
-                    </Badge>
+                    {isArchived ? (
+                      <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-700">
+                        Archived
+                      </Badge>
+                    ) : (
+                      <Badge variant={c.isActive ? "success" : "secondary"} className="text-[10px]">
+                        {c.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    )}
                     <span className="text-xs text-gray-400">since {formatDate(c.startDate)}</span>
                   </div>
                 </div>
@@ -249,20 +282,36 @@ export default async function CustomersPage({ searchParams }: PageProps) {
                     View
                   </Button>
                 </Link>
-                <Link href={`/customers/${c.id}/edit`}>
-                  <Button variant="outline" size="sm">Edit</Button>
-                </Link>
-                <CustomerToggleButton customerId={c.id} isActive={c.isActive} />
-                <DeleteCustomerButton customerId={c.id} customerName={c.name} iconOnly />
+                {isArchived ? (
+                  <RestoreCustomerButton customerId={c.id} />
+                ) : (
+                  <>
+                    <Link href={`/customers/${c.id}/edit`}>
+                      <Button variant="outline" size="sm">Edit</Button>
+                    </Link>
+                    <CustomerToggleButton customerId={c.id} isActive={c.isActive} />
+                    <DeleteCustomerButton customerId={c.id} customerName={c.name} iconOnly />
+                  </>
+                )}
               </div>
             </div>
           ))}
 
           {customers.length === 0 && (
             <div className="col-span-full text-center py-16 text-gray-400">
-              <UsersSvg className="w-10 h-10 mx-auto mb-3 opacity-40" />
-              <p className="font-medium">No customers found</p>
-              <p className="text-sm mt-1">Add your first customer to get started</p>
+              {isArchived ? (
+                <>
+                  <Archive className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                  <p className="font-medium">No archived customers</p>
+                  <p className="text-sm mt-1">Customers you archive will appear here</p>
+                </>
+              ) : (
+                <>
+                  <UsersSvg className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                  <p className="font-medium">No customers found</p>
+                  <p className="text-sm mt-1">Add your first customer to get started</p>
+                </>
+              )}
             </div>
           )}
         </div>

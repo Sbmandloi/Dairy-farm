@@ -3,6 +3,10 @@ import { getSettings } from "@/lib/services/settings.service";
 import { Header } from "@/components/layout/header";
 import { MonthlyEntryGrid } from "@/components/daily-entry/monthly-entry-grid";
 import { decimalToNumber } from "@/lib/utils/format";
+import { todayInAppTz } from "@/lib/utils/date";
+
+// Reflect saved entries immediately after a save (router.refresh re-runs this).
+export const dynamic = "force-dynamic";
 
 interface PageProps {
   searchParams: Promise<{ year?: string; month?: string }>;
@@ -10,9 +14,9 @@ interface PageProps {
 
 export default async function MonthlyEntryPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const now = new Date();
-  const year = parseInt(params.year || String(now.getFullYear()));
-  const month = parseInt(params.month || String(now.getMonth() + 1));
+  const [ty, tm] = todayInAppTz().split("-").map(Number);
+  const year = parseInt(params.year || String(ty));
+  const month = parseInt(params.month || String(tm));
 
   const [{ customers, entries, daysInMonth }, settings] = await Promise.all([
     getMonthlyEntries(year, month),
@@ -40,6 +44,7 @@ export default async function MonthlyEntryPage({ searchParams }: PageProps) {
       <Header title="Monthly Entry" />
       <div className="p-4 md:p-6">
         <MonthlyEntryGrid
+          key={`${year}-${month}`}
           year={year}
           month={month}
           daysInMonth={daysInMonth}

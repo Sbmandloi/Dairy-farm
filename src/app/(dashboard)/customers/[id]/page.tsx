@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DeleteCustomerButton } from "@/components/customers/delete-customer-button";
+import { RestoreCustomerButton } from "@/components/customers/restore-customer-button";
 import Link from "next/link";
 import { formatCurrency, formatDate, formatLiters, formatPeriod, decimalToNumber } from "@/lib/utils/format";
 import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from "@/lib/constants";
-import { Phone, MapPin, Calendar, IndianRupee, Edit, Droplets, Receipt, TrendingUp, Wallet, StickyNote } from "lucide-react";
+import { Phone, MapPin, Calendar, IndianRupee, Edit, Droplets, Receipt, TrendingUp, Wallet, StickyNote, Archive, ArrowLeft, CheckCircle2 } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -44,27 +45,53 @@ export default async function CustomerDetailPage({ params }: Props) {
   ]);
   if (!customer) notFound();
 
+  const isArchived = customer.deletedAt !== null;
+
   const totalLiters = customer.dailyEntries.reduce(
     (s, e) => s + decimalToNumber(e.totalLiters), 0
   );
   // Account totals come from the ledger (all bills), not just the 12 shown below.
   const { totalBilled, totalPaid, totalPending: balance, payments, pendingByBill, unpaidBills } = ledger;
+  const collectionPct = totalBilled > 0 ? Math.min(100, Math.round((totalPaid / totalBilled) * 100)) : 0;
 
   return (
     <div>
       <Header title={customer.name} />
       <div className="p-4 md:p-6 space-y-5">
 
+        {/* Back link */}
+        <Link
+          href="/customers"
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to customers
+        </Link>
+
+        {/* Archived banner */}
+        {isArchived && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="flex items-start gap-2 text-sm text-amber-800">
+              <Archive className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <p>
+                This customer is <strong>archived</strong>
+                {customer.deletedAt && <> since {formatDate(customer.deletedAt)}</>}. Their data is
+                kept in the database but hidden across the app. Restore to bring it back.
+              </p>
+            </div>
+            <RestoreCustomerButton customerId={id} />
+          </div>
+        )}
+
         {/* Profile Hero Card */}
         <Card className="overflow-hidden">
           {/* Banner */}
-          <div className="h-24 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400 relative">
+          <div className={`h-24 relative ${isArchived ? "bg-gradient-to-r from-amber-500 via-amber-400 to-orange-300" : "bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400"}`}>
             <div className="absolute inset-0 opacity-20"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
               }}
             />
-            {/* Dairy icon watermark */}
             <div className="absolute right-4 top-4 opacity-20">
               <svg className="w-16 h-16 text-white" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 2C9.5 2 7.5 3.5 7 5.5C5.5 5.8 4 7.2 4 9C4 10.8 5.2 12.2 6.8 12.7L7 18H17L17.2 12.7C18.8 12.2 20 10.8 20 9C20 7.2 18.5 5.8 17 5.5C16.5 3.5 14.5 2 12 2ZM10 9C9.4 9 9 8.6 9 8C9 7.4 9.4 7 10 7C10.6 7 11 7.4 11 8C11 8.6 10.6 9 10 9ZM14 9C13.4 9 13 8.6 13 8C13 7.4 13.4 7 14 7C14.6 7 15 7.4 15 8C15 8.6 14.6 9 14 9ZM9 19H15L15.5 21H8.5L9 19Z"/>
@@ -75,83 +102,93 @@ export default async function CustomerDetailPage({ params }: Props) {
           <CardContent className="pt-0 px-5 pb-5">
             {/* Avatar + actions row */}
             <div className="flex items-end justify-between -mt-8 mb-4">
-              {/* Avatar */}
               <div className={`w-16 h-16 rounded-2xl ${avatarColor(customer.name)} flex items-center justify-center shadow-lg border-4 border-white`}>
                 <span className="text-xl font-bold text-white tracking-wide">
                   {getInitials(customer.name)}
                 </span>
               </div>
-              {/* Action buttons */}
               <div className="flex gap-2 pb-0.5">
-                <Link href={`/customers/${id}/edit`}>
-                  <Button variant="outline" size="sm">
-                    <Edit className="w-4 h-4" />
-                    Edit
-                  </Button>
-                </Link>
-                <DeleteCustomerButton customerId={id} customerName={customer.name} />
+                {isArchived ? (
+                  <RestoreCustomerButton customerId={id} />
+                ) : (
+                  <>
+                    <Link href={`/customers/${id}/edit`}>
+                      <Button variant="outline" size="sm">
+                        <Edit className="w-4 h-4" />
+                        Edit
+                      </Button>
+                    </Link>
+                    <DeleteCustomerButton customerId={id} customerName={customer.name} />
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Name + badge */}
-            <div className="flex items-center gap-2 mb-3">
+            {/* Name + badges */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               <h2 className="text-xl font-bold text-gray-900">{customer.name}</h2>
-              <Badge variant={customer.isActive ? "success" : "secondary"}>
-                {customer.isActive ? "Active" : "Inactive"}
-              </Badge>
+              {isArchived ? (
+                <Badge variant="secondary" className="bg-amber-100 text-amber-700">Archived</Badge>
+              ) : (
+                <Badge variant={customer.isActive ? "success" : "secondary"}>
+                  {customer.isActive ? "Active" : "Inactive"}
+                </Badge>
+              )}
+              {customer.pricePerLiter && (
+                <Badge variant="info" className="text-[10px]">
+                  {formatCurrency(decimalToNumber(customer.pricePerLiter))}/L custom
+                </Badge>
+              )}
             </div>
 
-            {/* Contact info */}
-            <div className="grid sm:grid-cols-2 gap-1.5 text-sm text-gray-500 mb-4">
-              {customer.phoneNumber && (
-                <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  {customer.phoneNumber}
-                </div>
-              )}
-              {customer.address && (
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  {customer.address}
-                </div>
-              )}
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                Customer since {formatDate(customer.startDate)}
-              </div>
-              <div className="flex items-center gap-2">
-                <IndianRupee className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            {/* Contact chips */}
+            <div className="flex flex-wrap gap-2 mb-5">
+              {customer.phoneNumber && <Chip icon={Phone}>{customer.phoneNumber}</Chip>}
+              {customer.address && <Chip icon={MapPin}>{customer.address}</Chip>}
+              <Chip icon={Calendar}>Since {formatDate(customer.startDate)}</Chip>
+              <Chip icon={IndianRupee}>
                 {customer.pricePerLiter
-                  ? `${formatCurrency(decimalToNumber(customer.pricePerLiter))}/L (custom price)`
-                  : "Using global rate"}
-              </div>
+                  ? `${formatCurrency(decimalToNumber(customer.pricePerLiter))}/L`
+                  : "Global rate"}
+              </Chip>
             </div>
 
-            {/* Stats strip */}
-            <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-100">
-              <div className="text-center">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-50 mx-auto mb-1">
-                  <Droplets className="w-4 h-4 text-blue-500" />
+            {/* Collection progress */}
+            {totalBilled > 0 && (
+              <div className="mb-5">
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span className="font-medium text-gray-600">Collection</span>
+                  <span className="text-gray-500">
+                    <span className="font-semibold text-green-600">{formatCurrency(totalPaid)}</span>
+                    {" "}of {formatCurrency(totalBilled)}
+                    {balance > 0.01 ? (
+                      <span className="text-orange-500 font-medium"> · {formatCurrency(balance)} due</span>
+                    ) : (
+                      <span className="text-green-600 font-medium"> · fully paid</span>
+                    )}
+                  </span>
                 </div>
-                <p className="text-base font-bold text-blue-600">{totalLiters.toFixed(1)}L</p>
-                <p className="text-xs text-gray-400">Total Liters</p>
-              </div>
-              <div className="text-center border-x border-gray-100">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-50 mx-auto mb-1">
-                  <TrendingUp className="w-4 h-4 text-green-500" />
+                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${collectionPct >= 100 ? "bg-green-500" : "bg-gradient-to-r from-green-500 to-emerald-400"}`}
+                    style={{ width: `${collectionPct}%` }}
+                  />
                 </div>
-                <p className="text-base font-bold text-gray-800">{formatCurrency(totalBilled)}</p>
-                <p className="text-xs text-gray-400">Total Billed</p>
               </div>
-              <div className="text-center">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-orange-50 mx-auto mb-1">
-                  <Receipt className="w-4 h-4 text-orange-500" />
-                </div>
-                <p className={`text-base font-bold ${balance > 0 ? "text-orange-500" : "text-green-600"}`}>
-                  {formatCurrency(balance)}
-                </p>
-                <p className="text-xs text-gray-400">{balance > 0 ? "Outstanding" : "All Clear"}</p>
-              </div>
+            )}
+
+            {/* KPI stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-gray-100">
+              <Kpi icon={Droplets} tint="blue" value={`${totalLiters.toFixed(1)}L`} label="Total Liters" sub={`${customer.dailyEntries.length} deliveries`} />
+              <Kpi icon={TrendingUp} tint="violet" value={formatCurrency(totalBilled)} label="Total Billed" />
+              <Kpi icon={CheckCircle2} tint="green" value={formatCurrency(totalPaid)} label="Collected" />
+              <Kpi
+                icon={Receipt}
+                tint={balance > 0.01 ? "orange" : "green"}
+                value={formatCurrency(balance)}
+                label={balance > 0.01 ? "Outstanding" : "All Clear"}
+                valueClass={balance > 0.01 ? "text-orange-500" : "text-green-600"}
+              />
             </div>
           </CardContent>
         </Card>
@@ -161,35 +198,40 @@ export default async function CustomerDetailPage({ params }: Props) {
           <TabsList>
             <TabsTrigger value="bills">Bills ({customer.bills.length})</TabsTrigger>
             <TabsTrigger value="payments">Payments ({payments.length})</TabsTrigger>
-            <TabsTrigger value="entries">Recent Entries</TabsTrigger>
+            <TabsTrigger value="entries">Entries ({customer.dailyEntries.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="bills" className="mt-4">
             {customer.bills.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
-                <p>No bills generated yet</p>
-                <Link href="/billing" className="mt-2 inline-block">
+              <EmptyState icon={Receipt} title="No bills generated yet">
+                <Link href="/billing" className="mt-3 inline-block">
                   <Button variant="outline" size="sm">Go to Billing</Button>
                 </Link>
-              </div>
+              </EmptyState>
             ) : (
               <div className="space-y-2">
                 {customer.bills.map((bill) => {
                   const paid = bill.payments.reduce((s, p) => s + decimalToNumber(p.amountPaid), 0);
                   const due = decimalToNumber(bill.totalAmount) - paid;
                   return (
-                    <Link key={bill.id} href={`/billing/${bill.id}`}>
-                      <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:shadow-sm transition-all">
-                        <div>
-                          <p className="font-medium text-gray-900">{bill.invoiceNumber}</p>
+                    <Link key={bill.id} href={`/billing/${bill.id}`} className="block">
+                      <div className="flex items-center justify-between gap-3 p-4 bg-white border border-gray-200 rounded-xl hover:shadow-sm hover:border-blue-200 transition-all">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-gray-900 truncate">{bill.invoiceNumber}</p>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${BILL_STATUS_COLORS[bill.status]}`}>
+                              {BILL_STATUS_LABELS[bill.status]}
+                            </span>
+                          </div>
                           <p className="text-xs text-gray-400 mt-0.5">{formatPeriod(bill.periodStart, bill.periodEnd)}</p>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right flex-shrink-0">
                           <p className="font-bold text-gray-900">{formatCurrency(decimalToNumber(bill.totalAmount))}</p>
-                          {due > 0 && <p className="text-xs text-orange-500">Due: {formatCurrency(due)}</p>}
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${BILL_STATUS_COLORS[bill.status]}`}>
-                            {BILL_STATUS_LABELS[bill.status]}
-                          </span>
+                          {due > 0.01 ? (
+                            <p className="text-xs text-orange-500">Due {formatCurrency(due)}</p>
+                          ) : (
+                            <p className="text-xs text-green-600">Paid</p>
+                          )}
                         </div>
                       </div>
                     </Link>
@@ -200,49 +242,18 @@ export default async function CustomerDetailPage({ params }: Props) {
           </TabsContent>
 
           <TabsContent value="payments" className="mt-4 space-y-4">
-            {/* Account summary */}
-            <div className="grid grid-cols-3 gap-3">
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-xs text-gray-400 mb-1">Total Billed</p>
-                  <p className="text-lg font-bold text-gray-800">{formatCurrency(totalBilled)}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-xs text-gray-400 mb-1">Amount Paid</p>
-                  <p className="text-lg font-bold text-green-600">{formatCurrency(totalPaid)}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-xs text-gray-400 mb-1">Amount Pending</p>
-                  <p className={`text-lg font-bold ${balance > 0 ? "text-orange-500" : "text-green-600"}`}>
-                    {formatCurrency(balance)}
-                  </p>
-                  {unpaidBills > 0 && (
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      across {unpaidBills} bill{unpaidBills > 1 ? "s" : ""}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
             {payments.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
-                <Wallet className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p>No payments recorded yet</p>
+              <EmptyState icon={Wallet} title="No payments recorded yet">
                 {balance > 0 && (
-                  <p className="text-xs mt-1">
+                  <p className="text-xs mt-1 text-gray-400">
                     {formatCurrency(balance)} is outstanding across this customer&apos;s bills.
                   </p>
                 )}
-              </div>
+              </EmptyState>
             ) : (
               <>
                 {/* Desktop: full ledger table */}
-                <div className="hidden md:block bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200">
@@ -306,7 +317,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                   {payments.map((p) => {
                     const pending = pendingByBill.get(p.bill.id) ?? 0;
                     return (
-                      <div key={p.id} className="p-4 bg-white border border-gray-200 rounded-lg">
+                      <div key={p.id} className="p-4 bg-white border border-gray-200 rounded-xl">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <Link href={`/billing/${p.bill.id}`} className="font-medium text-blue-600">
@@ -337,9 +348,9 @@ export default async function CustomerDetailPage({ params }: Props) {
 
           <TabsContent value="entries" className="mt-4">
             {customer.dailyEntries.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">No entries recorded</div>
+              <EmptyState icon={Droplets} title="No entries recorded" />
             ) : (
-              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
@@ -351,7 +362,7 @@ export default async function CustomerDetailPage({ params }: Props) {
                   </thead>
                   <tbody>
                     {customer.dailyEntries.map((e) => (
-                      <tr key={e.id} className="border-b border-gray-100 last:border-0">
+                      <tr key={e.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/60">
                         <td className="px-4 py-2.5 text-gray-700">{formatDate(e.date)}</td>
                         <td className="px-4 py-2.5 text-right text-gray-500">
                           {e.morningLiters ? formatLiters(decimalToNumber(e.morningLiters)) : "—"}
@@ -371,6 +382,67 @@ export default async function CustomerDetailPage({ params }: Props) {
           </TabsContent>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+function Chip({ icon: Icon, children }: { icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-50 border border-gray-200 px-3 py-1 text-xs text-gray-600 max-w-full">
+      <Icon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+const KPI_TINTS: Record<string, string> = {
+  blue: "bg-blue-50 text-blue-500",
+  violet: "bg-violet-50 text-violet-500",
+  green: "bg-green-50 text-green-500",
+  orange: "bg-orange-50 text-orange-500",
+};
+
+function Kpi({
+  icon: Icon,
+  tint,
+  value,
+  label,
+  sub,
+  valueClass,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  tint: keyof typeof KPI_TINTS | string;
+  value: string;
+  label: string;
+  sub?: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="text-center">
+      <div className={`flex items-center justify-center w-8 h-8 rounded-full mx-auto mb-1 ${KPI_TINTS[tint] ?? KPI_TINTS.blue}`}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <p className={`text-base font-bold ${valueClass ?? "text-gray-800"}`}>{value}</p>
+      <p className="text-xs text-gray-400">{label}</p>
+      {sub && <p className="text-[10px] text-gray-400">{sub}</p>}
+    </div>
+  );
+}
+
+function EmptyState({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="text-center py-14 text-gray-400 bg-white border border-dashed border-gray-200 rounded-xl">
+      <Icon className="w-9 h-9 mx-auto mb-3 text-gray-300" />
+      <p className="font-medium text-gray-500">{title}</p>
+      {children}
     </div>
   );
 }

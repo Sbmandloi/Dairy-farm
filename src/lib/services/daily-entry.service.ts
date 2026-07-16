@@ -11,12 +11,12 @@ export async function getDailyEntries(date: Date) {
 
 export async function getDailyEntriesWithCustomers(date: Date) {
   const activeCustomers = await prisma.customer.findMany({
-    where: { isActive: true },
+    where: { isActive: true, deletedAt: null },
     orderBy: { name: "asc" },
   });
 
   const entries = await prisma.dailyMilkEntry.findMany({
-    where: { date },
+    where: { date, customer: { deletedAt: null } },
   });
 
   const entryMap = new Map(entries.map((e) => [e.customerId, e]));
@@ -38,21 +38,28 @@ export async function saveDailyEntries(date: Date, entries: DailyEntryItemInput[
         });
         continue;
       }
+      // Coalesce undefined → null. Prisma IGNORES `undefined` on update, so
+      // without this, clearing just morning or just evening would silently keep
+      // the old value. `null` explicitly wipes the field.
+      const morning = entry.morningLiters ?? null;
+      const evening = entry.eveningLiters ?? null;
+      const notes = entry.notes ?? null;
+
       const result = await tx.dailyMilkEntry.upsert({
         where: { customerId_date: { customerId: entry.customerId, date } },
         create: {
           customerId: entry.customerId,
           date,
-          morningLiters: entry.morningLiters,
-          eveningLiters: entry.eveningLiters,
+          morningLiters: morning,
+          eveningLiters: evening,
           totalLiters: entry.totalLiters,
-          notes: entry.notes,
+          notes,
         },
         update: {
-          morningLiters: entry.morningLiters,
-          eveningLiters: entry.eveningLiters,
+          morningLiters: morning,
+          eveningLiters: evening,
           totalLiters: entry.totalLiters,
-          notes: entry.notes,
+          notes,
         },
       });
       results.push(result);
@@ -62,11 +69,13 @@ export async function saveDailyEntries(date: Date, entries: DailyEntryItemInput[
 }
 
 export async function copyPreviousDay(targetDate: Date) {
+  // UTC-safe "day before" so the lookup matches Postgres @db.Date regardless of
+  // server timezone, and skip archived customers.
   const prevDate = new Date(targetDate);
-  prevDate.setDate(prevDate.getDate() - 1);
+  prevDate.setUTCDate(prevDate.getUTCDate() - 1);
 
   return prisma.dailyMilkEntry.findMany({
-    where: { date: prevDate },
+    where: { date: prevDate, customer: { deletedAt: null } },
     include: { customer: true },
   });
 }

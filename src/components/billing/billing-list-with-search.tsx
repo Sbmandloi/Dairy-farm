@@ -5,11 +5,11 @@ import { SearchBar } from "@/components/ui/search-bar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { SendWhatsAppButton } from "./send-whatsapp-button";
 import { MarkPaidDialog } from "./mark-paid-dialog";
 import { GenerateCustomerBillButton } from "./generate-customer-bill-button";
+import { BillPreviewDialog } from "./bill-preview-dialog";
 import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from "@/lib/constants";
-import { formatCurrency, formatLiters } from "@/lib/utils/format";
+import { formatCurrency, formatLiters, formatDate } from "@/lib/utils/format";
 import { Users } from "lucide-react";
 
 // ─── Serializable types (no Prisma Decimals) ────────────────────────────────
@@ -19,6 +19,7 @@ export interface SerializedBillRow {
     id: string;
     name: string;
     address: string | null;
+    phoneNumber: string | null;
   };
   bill: {
     id: string;
@@ -29,6 +30,7 @@ export interface SerializedBillRow {
     status: string;
     periodStart: string;
     periodEnd: string;
+    paid: number;
     due: number;
   } | null;
 }
@@ -159,11 +161,20 @@ export function BillingListWithSearch({ rows, periodStart, periodEnd }: Props) {
                     {bill.due > 0 && (
                       <p className="text-xs text-orange-500">Due: {formatCurrency(bill.due)}</p>
                     )}
+                    {bill.paid > 0 && (
+                      <p className="text-xs text-green-600">Paid: {formatCurrency(bill.paid)}</p>
+                    )}
                     <div className="flex flex-wrap gap-2">
                       <Link href={`/billing/${bill.id}`}>
                         <button className="text-xs text-blue-600 hover:underline">View</button>
                       </Link>
-                      <SendWhatsAppButton billId={bill.id} />
+                      <BillPreviewDialog
+                        billId={bill.id}
+                        invoiceNumber={bill.invoiceNumber}
+                        customerName={customer.name}
+                        canSend={!!customer.phoneNumber}
+                        triggerLabel="Preview & Send"
+                      />
                       {bill.due > 0 && (
                         <MarkPaidDialog billId={bill.id} remainingAmount={bill.due} />
                       )}
@@ -206,6 +217,9 @@ export function BillingListWithSearch({ rows, periodStart, periodEnd }: Props) {
                   {bill ? (
                     <>
                       <p className="font-bold text-gray-900">{formatCurrency(bill.totalAmount)}</p>
+                      {bill.paid > 0 && (
+                        <p className="text-xs text-green-600">Paid: {formatCurrency(bill.paid)}</p>
+                      )}
                       {bill.due > 0 && (
                         <p className="text-xs text-orange-500">Due: {formatCurrency(bill.due)}</p>
                       )}
@@ -226,8 +240,10 @@ export function BillingListWithSearch({ rows, periodStart, periodEnd }: Props) {
                 <div className="text-center text-xs text-gray-500 whitespace-nowrap">
                   {bill ? (
                     <>
-                      <p>{new Date(bill.periodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</p>
-                      <p>{new Date(bill.periodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>
+                      {/* formatDate is UTC-pinned — toLocaleDateString here rendered
+                          the period a day early west of UTC ("30 Jun" for Jul 1). */}
+                      <p>{formatDate(bill.periodStart)}</p>
+                      <p>{formatDate(bill.periodEnd)}</p>
                     </>
                   ) : (
                     <span className="text-gray-300">—</span>
@@ -239,7 +255,12 @@ export function BillingListWithSearch({ rows, periodStart, periodEnd }: Props) {
                       <Link href={`/billing/${bill.id}`}>
                         <button className="text-xs text-blue-600 hover:underline">Details</button>
                       </Link>
-                      <SendWhatsAppButton billId={bill.id} />
+                      <BillPreviewDialog
+                        billId={bill.id}
+                        invoiceNumber={bill.invoiceNumber}
+                        customerName={customer.name}
+                        canSend={!!customer.phoneNumber}
+                      />
                       {bill.due > 0 && (
                         <MarkPaidDialog billId={bill.id} remainingAmount={bill.due} />
                       )}

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SendWhatsAppButton } from "@/components/billing/send-whatsapp-button";
+import { BillPreviewDialog } from "@/components/billing/bill-preview-dialog";
 import { MarkPaidDialog } from "@/components/billing/mark-paid-dialog";
 import { formatCurrency, formatDate, formatLiters, formatPeriod, decimalToNumber } from "@/lib/utils/format";
 import { BILL_STATUS_LABELS, BILL_STATUS_COLORS } from "@/lib/constants";
@@ -73,14 +74,21 @@ export default async function BillDetailPage({ params }: Props) {
                   )}
                 </div>
 
-                <div className="mt-4 flex gap-2">
-                  <a href={`/api/billing/${id}/pdf`} target="_blank" rel="noopener noreferrer">
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <BillPreviewDialog
+                    billId={id}
+                    invoiceNumber={bill.invoiceNumber}
+                    customerName={bill.customer.name}
+                    canSend={!!bill.customer.phoneNumber}
+                    triggerLabel="Preview Bill"
+                  />
+                  <a href={`/api/billing/${id}/pdf`} download>
                     <Button variant="outline" size="sm">
                       <Download className="w-4 h-4" />
                       Download PDF
                     </Button>
                   </a>
-                  <SendWhatsAppButton billId={id} />
+                  <SendWhatsAppButton billId={id} disabled={!bill.customer.phoneNumber} />
                   {due > 0 && <MarkPaidDialog billId={id} remainingAmount={due} />}
                 </div>
               </CardContent>

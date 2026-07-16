@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   const customers = await prisma.customer.findMany({
+    where: { deletedAt: null },
     orderBy: { name: "asc" },
     include: {
       bills: {

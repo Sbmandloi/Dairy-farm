@@ -34,9 +34,15 @@ import {
   updateCollectionAction,
   deleteCollectionAction,
 } from "@/lib/actions/payment.actions";
+import { todayInAppTz } from "@/lib/utils/date";
 
+/**
+ * Default "paid on" to the dairy's today (IST), not the browser's local day —
+ * otherwise a payment taken late in the IST evening defaults to the wrong date
+ * for anyone whose device sits west of UTC.
+ */
 function today(): string {
-  return new Date().toLocaleDateString("en-CA"); // "YYYY-MM-DD" in local time
+  return todayInAppTz();
 }
 
 interface Props {

@@ -7,32 +7,48 @@ import {
   CustomerPatch,
 } from "@/lib/schemas/customer.schema";
 
-export async function getCustomers(opts?: { active?: boolean; search?: string }) {
-  return prisma.customer.findMany({
-    where: {
-      ...(opts?.active !== undefined && { isActive: opts.active }),
-      ...(opts?.search && {
+export type CustomerScope = {
+  active?: boolean;
+  search?: string;
+  /** When true, return ONLY soft-deleted (archived) customers instead of live ones. */
+  archived?: boolean;
+};
+
+/**
+ * Where-clause for customer lists. By default excludes soft-deleted customers
+ * (deletedAt IS NULL). `archived: true` flips it to return only the deleted ones
+ * for the archive view. `active` and `search` narrow the live set.
+ */
+function customerScopeWhere(opts?: CustomerScope) {
+  const search = opts?.search
+    ? {
         OR: [
-          { name: { contains: opts.search, mode: "insensitive" } },
+          { name: { contains: opts.search, mode: "insensitive" as const } },
           { phoneNumber: { contains: opts.search } },
         ],
-      }),
-    },
+      }
+    : {};
+
+  if (opts?.archived) {
+    return { deletedAt: { not: null }, ...search };
+  }
+  return {
+    deletedAt: null,
+    ...(opts?.active !== undefined && { isActive: opts.active }),
+    ...search,
+  };
+}
+
+export async function getCustomers(opts?: CustomerScope) {
+  return prisma.customer.findMany({
+    where: customerScopeWhere(opts),
     orderBy: { name: "asc" },
   });
 }
 
-export async function getCustomersWithStats(opts?: { active?: boolean; search?: string }) {
+export async function getCustomersWithStats(opts?: CustomerScope) {
   const customers = await prisma.customer.findMany({
-    where: {
-      ...(opts?.active !== undefined && { isActive: opts.active }),
-      ...(opts?.search && {
-        OR: [
-          { name: { contains: opts.search, mode: "insensitive" } },
-          { phoneNumber: { contains: opts.search } },
-        ],
-      }),
-    },
+    where: customerScopeWhere(opts),
     orderBy: { name: "asc" },
     include: {
       bills: {
@@ -105,6 +121,7 @@ export type ManagedCustomer = {
  */
 export async function getCustomersForManager(): Promise<ManagedCustomer[]> {
   const customers = await prisma.customer.findMany({
+    where: { deletedAt: null },
     orderBy: { name: "asc" },
     include: {
       bills: {
@@ -308,10 +325,38 @@ export async function toggleCustomerStatus(id: string) {
   });
 }
 
+/**
+ * Soft delete: hide the customer (and, by extension, their bills/entries/payments)
+ * from every UI surface WITHOUT removing anything from the database. Also flips
+ * isActive off so the record drops out of active-only queries. Fully reversible
+ * via restoreCustomer(). Related rows are deliberately left untouched so the
+ * complete history can be restored or inspected later.
+ */
 export async function deleteCustomer(id: string) {
-  // Delete all related records first (cascade)
-  await prisma.payment.deleteMany({ where: { bill: { customerId: id } } });
-  await prisma.bill.deleteMany({ where: { customerId: id } });
-  await prisma.dailyMilkEntry.deleteMany({ where: { customerId: id } });
-  return prisma.customer.delete({ where: { id } });
+  return prisma.customer.update({
+    where: { id },
+    data: { deletedAt: new Date(), isActive: false },
+  });
+}
+
+/** Undo a soft delete: bring the customer (and all their retained data) back. */
+export async function restoreCustomer(id: string) {
+  return prisma.customer.update({
+    where: { id },
+    data: { deletedAt: null },
+  });
+}
+
+/**
+ * Irreversibly remove a customer and every related record. NOT wired to any UI
+ * button — kept for admin/maintenance use only, so a normal "delete" can never
+ * destroy data.
+ */
+export async function permanentlyDeleteCustomer(id: string) {
+  return prisma.$transaction(async (tx) => {
+    await tx.payment.deleteMany({ where: { bill: { customerId: id } } });
+    await tx.bill.deleteMany({ where: { customerId: id } });
+    await tx.dailyMilkEntry.deleteMany({ where: { customerId: id } });
+    return tx.customer.delete({ where: { id } });
+  });
 }

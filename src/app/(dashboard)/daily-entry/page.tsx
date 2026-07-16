@@ -1,12 +1,15 @@
-import { getDailyEntriesWithCustomers, getDailySummary } from "@/lib/services/daily-entry.service";
+import { getDailyEntriesWithCustomers } from "@/lib/services/daily-entry.service";
 import { getSettings } from "@/lib/services/settings.service";
 import { Header } from "@/components/layout/header";
 import { EntryGrid } from "@/components/daily-entry/entry-grid";
 import { DateNavigator } from "@/components/daily-entry/date-navigator";
-import { formatDate, formatLiters, formatCurrency } from "@/lib/utils/format";
+import { formatLiters, formatCurrency, decimalToNumber } from "@/lib/utils/format";
+import { parseDateOnly, todayInAppTz } from "@/lib/utils/date";
 import { Card, CardContent } from "@/components/ui/card";
 import { Milk, Users, IndianRupee } from "lucide-react";
-import { decimalToNumber } from "@/lib/utils/format";
+
+// The summary cards must reflect the latest saved entries immediately.
+export const dynamic = "force-dynamic";
 
 interface PageProps {
   searchParams: Promise<{ date?: string }>;
@@ -14,18 +17,30 @@ interface PageProps {
 
 export default async function DailyEntryPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const dateStr = params.date || new Date().toISOString().split("T")[0];
-  const date = new Date(dateStr);
-  date.setHours(0, 0, 0, 0);
+  const dateStr = params.date || todayInAppTz();
+  const date = parseDateOnly(dateStr);
 
-  const [rows, summary, settings] = await Promise.all([
+  const [rows, settings] = await Promise.all([
     getDailyEntriesWithCustomers(date),
-    getDailySummary(date),
     getSettings(),
   ]);
 
-  const price = parseFloat(String(settings.globalPricePerLiter));
-  const estimatedRevenue = summary.totalLiters * price;
+  const globalPrice = decimalToNumber(settings.globalPricePerLiter);
+
+  // Compute the summary from the same rows, using each customer's effective
+  // price (custom, else global) so revenue matches what bills will produce.
+  let totalLiters = 0;
+  let estimatedRevenue = 0;
+  let customerCount = 0;
+  for (const { customer, entry } of rows) {
+    if (!entry) continue;
+    const liters = entry.totalLiters != null ? decimalToNumber(entry.totalLiters) : 0;
+    if (liters <= 0) continue;
+    customerCount++;
+    totalLiters += liters;
+    const price = customer.pricePerLiter != null ? decimalToNumber(customer.pricePerLiter) : globalPrice;
+    estimatedRevenue += liters * price;
+  }
 
   return (
     <div>
@@ -40,27 +55,30 @@ export default async function DailyEntryPage({ searchParams }: PageProps) {
             <CardContent className="p-3 text-center">
               <Milk className="w-4 h-4 text-blue-500 mx-auto mb-1" />
               <p className="text-xs text-gray-500">Total Milk</p>
-              <p className="font-bold text-blue-600">{formatLiters(summary.totalLiters)}</p>
+              <p className="font-bold text-blue-600">{formatLiters(totalLiters)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-3 text-center">
               <Users className="w-4 h-4 text-purple-500 mx-auto mb-1" />
               <p className="text-xs text-gray-500">Customers</p>
-              <p className="font-bold text-purple-600">{summary.customerCount}</p>
+              <p className="font-bold text-purple-600">{customerCount}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-3 text-center">
               <IndianRupee className="w-4 h-4 text-green-500 mx-auto mb-1" />
-              <p className="text-xs text-gray-500">Revenue</p>
+              <p className="text-xs text-gray-500">Est. Revenue</p>
               <p className="font-bold text-green-600">{formatCurrency(estimatedRevenue)}</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Entry Grid — serialize Prisma Decimal/Date to plain JS types */}
+        {/* Entry Grid — serialize Prisma Decimal/Date to plain JS types.
+            key={dateStr} forces a fresh mount per day so the grid always shows
+            THAT day's saved entries, never stale state from a previous day. */}
         <EntryGrid
+          key={dateStr}
           date={dateStr}
           rows={rows.map(({ customer, entry }) => ({
             customer: {

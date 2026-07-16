@@ -85,17 +85,12 @@ export function UserManagement({ users: initialUsers }: Props) {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-blue-600" />
-            Login Accounts
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Manage who can sign in to this system
-          </p>
-        </div>
+      {/* The section card already carries the title/description — just the action here. */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-gray-500 inline-flex items-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+          {users.length} login account{users.length === 1 ? "" : "s"}
+        </p>
         <Button size="sm" onClick={() => { setShowForm((v) => !v); setFormError(""); setFormSuccess(""); }}>
           {showForm ? <X className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
           {showForm ? "Cancel" : "Add User"}

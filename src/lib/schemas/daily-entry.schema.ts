@@ -2,10 +2,11 @@ import { z } from "zod";
 
 export const dailyEntryItemSchema = z.object({
   customerId: z.string().cuid(),
-  morningLiters: z.number().min(0).optional(),
-  eveningLiters: z.number().min(0).optional(),
+  // nullable so an explicitly-cleared morning/evening is a valid "wipe it" signal.
+  morningLiters: z.number().min(0).nullable().optional(),
+  eveningLiters: z.number().min(0).nullable().optional(),
   totalLiters: z.number().min(0),
-  notes: z.string().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 export const saveDailyEntriesSchema = z.object({

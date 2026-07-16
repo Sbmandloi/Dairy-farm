@@ -8,13 +8,19 @@ import Link from "next/link";
 interface HeaderProps {
   title: string;
   userName?: string;
+  actions?: React.ReactNode;
 }
 
-export function Header({ title, userName }: HeaderProps) {
+export function Header({ title, userName, actions }: HeaderProps) {
   return (
     <header className="sticky top-0 z-20 flex items-center justify-between h-14 px-4 md:px-6 bg-white border-b border-gray-200">
       <h1 className="text-base font-semibold text-gray-900">{title}</h1>
       <div className="flex items-center gap-2">
+        {actions ? (
+          <div className="flex items-center pr-1 mr-1 border-r border-gray-200">
+            {actions}
+          </div>
+        ) : null}
         <Link href="/settings">
           <Button variant="ghost" size="icon">
             <Settings className="w-4 h-4 text-gray-500" />

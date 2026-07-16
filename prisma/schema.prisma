@@ -27,6 +27,9 @@ model Customer {
   isActive      Boolean  @default(true) @map("is_active")
   startDate     DateTime @map("start_date") @db.Date
   lastRemindedAt DateTime? @map("last_reminded_at")
+  // Soft delete: when set, the customer (and all their bills/entries/payments)
+  // is hidden from every UI surface but retained in the database and restorable.
+  deletedAt     DateTime? @map("deleted_at")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -35,6 +38,7 @@ model Customer {
 
   @@index([isActive])
   @@index([phoneNumber])
+  @@index([deletedAt])
   @@map("customers")
 }
 

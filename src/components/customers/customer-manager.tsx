@@ -221,7 +221,7 @@ export function CustomerManager({ customers, collections, globalPricePerLiter }:
     setRemindingId(null);
     setReminderMsg(
       result.success
-        ? { id: c.id, ok: true, text: `Reminder sent to ${c.name}.` }
+        ? { id: c.id, ok: true, text: `Hindi reminder sent to ${c.name}.` }
         : { id: c.id, ok: false, text: result.error }
     );
     if (result.success) router.refresh();
@@ -545,7 +545,7 @@ export function CustomerManager({ customers, collections, globalPricePerLiter }:
                               ? "No phone number on file"
                               : c.pendingAmount <= 0.01
                               ? "Nothing outstanding"
-                              : "Send a WhatsApp payment reminder"
+                              : "Send a WhatsApp payment reminder (in Hindi)"
                           }
                           onClick={() => handleRemind(c)}
                         >

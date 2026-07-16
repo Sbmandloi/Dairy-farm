@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { formatDate } from "@/lib/utils/format";
+import { addDays, isToday, parseDateOnly, todayInAppTz } from "@/lib/utils/date";
 
 interface DateNavigatorProps {
   currentDate: string;
@@ -11,15 +12,12 @@ interface DateNavigatorProps {
 
 export function DateNavigator({ currentDate }: DateNavigatorProps) {
   const router = useRouter();
-  const date = new Date(currentDate);
+  const today = todayInAppTz();
+  const atToday = isToday(currentDate);
 
   function navigate(days: number) {
-    const next = new Date(date);
-    next.setDate(next.getDate() + days);
-    router.push(`/daily-entry?date=${next.toISOString().split("T")[0]}`);
+    router.push(`/daily-entry?date=${addDays(currentDate, days)}`);
   }
-
-  const isToday = currentDate === new Date().toISOString().split("T")[0];
 
   return (
     <div className="flex items-center gap-3">
@@ -29,17 +27,17 @@ export function DateNavigator({ currentDate }: DateNavigatorProps) {
 
       <div className="flex items-center gap-2 flex-1 justify-center">
         <CalendarDays className="w-4 h-4 text-gray-400" />
-        <span className="font-semibold text-gray-900">{formatDate(date)}</span>
-        {isToday && (
+        <span className="font-semibold text-gray-900">{formatDate(parseDateOnly(currentDate))}</span>
+        {atToday && (
           <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Today</span>
         )}
       </div>
 
       <div className="flex gap-2">
-        <Button variant="outline" size="icon" onClick={() => navigate(1)} disabled={isToday}>
+        <Button variant="outline" size="icon" onClick={() => navigate(1)} disabled={atToday}>
           <ChevronRight className="w-4 h-4" />
         </Button>
-        {!isToday && (
+        {!atToday && (
           <Button variant="outline" size="sm" onClick={() => router.push("/daily-entry")}>
             Today
           </Button>
@@ -50,7 +48,7 @@ export function DateNavigator({ currentDate }: DateNavigatorProps) {
       <input
         type="date"
         value={currentDate}
-        max={new Date().toISOString().split("T")[0]}
+        max={today}
         onChange={(e) => router.push(`/daily-entry?date=${e.target.value}`)}
         className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
       />

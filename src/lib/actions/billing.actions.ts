@@ -8,6 +8,7 @@ import {
   createManualBill,
 } from "@/lib/services/billing.service";
 import { sendBillViaWhatsApp, sendAllBillsWhatsApp } from "@/lib/services/whatsapp.service";
+import { parseDateOnly } from "@/lib/utils/date";
 import { ActionResult } from "@/types";
 
 // Serializable bill summary (no Prisma Decimal / Date)
@@ -35,11 +36,12 @@ export async function generateBillsAction(
     }
 
     const bills = await generateBillsForPeriod(
-      new Date(parsed.data.periodStart),
-      new Date(parsed.data.periodEnd),
+      parseDateOnly(parsed.data.periodStart),
+      parseDateOnly(parsed.data.periodEnd),
       parsed.data.customerId
     );
     revalidatePath("/billing");
+    revalidatePath("/dashboard");
 
     // Serialize Decimal → number so it crosses the Server Action boundary cleanly
     return {
@@ -81,6 +83,7 @@ export async function markBillPaidAction(
     );
     revalidatePath("/billing");
     revalidatePath(`/billing/${billId}`);
+    revalidatePath("/dashboard");
     return { success: true, data: undefined };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "Failed to mark as paid" };
@@ -92,6 +95,7 @@ export async function sendBillWhatsAppAction(billId: string): Promise<ActionResu
     await sendBillViaWhatsApp(billId);
     revalidatePath("/billing");
     revalidatePath(`/billing/${billId}`);
+    revalidatePath("/dashboard");
     return { success: true, data: undefined };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "Failed to send WhatsApp" };
@@ -122,6 +126,7 @@ export async function createManualBillAction(data: {
 
     revalidatePath("/billing");
     revalidatePath("/quick-bill");
+    revalidatePath("/dashboard");
 
     return {
       success: true,
@@ -148,10 +153,18 @@ export async function createManualBillAction(data: {
 export async function sendAllBillsWhatsAppAction(
   periodStart: string,
   periodEnd: string
-): Promise<ActionResult<{ billId: string; success: boolean; msgId?: string; error?: string }[]>> {
+): Promise<
+  ActionResult<
+    { billId: string; customerName: string; success: boolean; msgId?: string; error?: string }[]
+  >
+> {
   try {
-    const results = await sendAllBillsWhatsApp(new Date(periodStart), new Date(periodEnd));
+    const results = await sendAllBillsWhatsApp(
+      parseDateOnly(periodStart),
+      parseDateOnly(periodEnd)
+    );
     revalidatePath("/billing");
+    revalidatePath("/dashboard");
     return { success: true, data: results };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "Failed to send bills" };

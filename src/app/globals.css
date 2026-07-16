@@ -73,3 +73,29 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+/* Always-visible, comfortable horizontal scrollbar for wide grids (the monthly
+   entry table). macOS hides overlay scrollbars by default, which made it look
+   like only a few days were available — this keeps the scroll affordance
+   visible so users know they can reach every date. */
+.grid-scroll {
+  scrollbar-width: auto;              /* Firefox */
+  scrollbar-color: #94a3b8 #e2e8f0;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+.grid-scroll::-webkit-scrollbar {
+  height: 12px;
+}
+.grid-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+.grid-scroll::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 8px;
+  border: 3px solid #f1f5f9;
+}
+.grid-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
