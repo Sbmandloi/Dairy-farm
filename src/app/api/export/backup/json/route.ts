@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { recordBackupTaken } from "@/lib/services/settings.service";
 
 // GET /api/export/backup/json
 // Full-fidelity, machine-restorable snapshot of the ENTIRE database.
@@ -47,6 +49,16 @@ export async function GET() {
 
   const json = JSON.stringify(snapshot, null, 2);
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+
+  // Stamp the backup only once the snapshot actually serialized — otherwise a
+  // failed export would still report "backed up just now". Never let this break
+  // the download itself: the file in the user's hands is the real backup.
+  try {
+    await recordBackupTaken();
+    revalidatePath("/reports");
+  } catch (e) {
+    console.error("Could not record lastBackupAt:", e);
+  }
 
   return new NextResponse(json, {
     headers: {

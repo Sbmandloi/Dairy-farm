@@ -111,6 +111,10 @@ model Settings {
   whatsappPhoneNumberId  String?  @map("whatsapp_phone_number_id")
   whatsappAccessToken    String?  @map("whatsapp_access_token")
   whatsappTemplateName   String?  @map("whatsapp_template_name")
+  // When a full restorable (JSON) backup was last taken. Used to warn when the
+  // off-site copy has gone stale. CSV exports deliberately do NOT update this —
+  // they cannot restore the database, so they aren't backups.
+  lastBackupAt           DateTime? @map("last_backup_at")
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @updatedAt @map("updated_at")
 

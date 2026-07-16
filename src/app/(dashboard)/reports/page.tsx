@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getSettings } from "@/lib/services/settings.service";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -69,6 +70,9 @@ export default async function ReportsPage() {
     where: liveViaBill,
     _sum: { amountPaid: true },
   });
+
+  // Drives the "last backup" status on the Backup tab.
+  const settings = await getSettings();
 
   // Derived from the two aggregates already fetched — no extra query.
   const allTimeOutstanding =
@@ -345,7 +349,11 @@ export default async function ReportsPage() {
           </TabsContent>
 
           <TabsContent value="backup" className="mt-4">
-            <BackupDownloads months={backupMonths} weeks={backupWeeks} />
+            <BackupDownloads
+              months={backupMonths}
+              weeks={backupWeeks}
+              lastBackupAt={settings.lastBackupAt ? settings.lastBackupAt.toISOString() : null}
+            />
           </TabsContent>
         </Tabs>
       </div>

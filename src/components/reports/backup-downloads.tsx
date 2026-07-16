@@ -1,9 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, Archive, Calendar, Clock, DatabaseBackup, FileSpreadsheet, Info } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/utils/format";
+import {
+  Download, Loader2, Archive, Calendar, Clock, DatabaseBackup,
+  FileSpreadsheet, Info, CheckCircle2, AlertTriangle, ShieldAlert,
+} from "lucide-react";
 
 interface Period {
   value: string;
@@ -13,11 +19,51 @@ interface Period {
 interface BackupDownloadsProps {
   months: Period[];
   weeks: Period[];
+  /** ISO timestamp of the last full JSON backup, or null if never taken. */
+  lastBackupAt: string | null;
 }
 
-export function BackupDownloads({ months, weeks }: BackupDownloadsProps) {
+/**
+ * How stale the off-site backup is.
+ *
+ * Thresholds assume the JSON download is the *off-provider* copy taken roughly
+ * monthly (Neon's own snapshots/PITR cover the recent window), so 30 days is
+ * the point at which it's worth nagging — not 24 hours.
+ */
+function backupStatus(lastBackupAt: string | null) {
+  if (!lastBackupAt) {
+    return {
+      tone: "bg-red-50 border-red-200 text-red-800",
+      icon: ShieldAlert,
+      title: "No backup taken yet",
+      detail: "Download a full backup and keep it somewhere outside the app (e.g. Google Drive).",
+    };
+  }
+  const days = Math.floor((Date.now() - new Date(lastBackupAt).getTime()) / 86_400_000);
+  const when =
+    days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+
+  if (days > 30) {
+    return {
+      tone: "bg-amber-50 border-amber-200 text-amber-900",
+      icon: AlertTriangle,
+      title: `Last backup ${when} — time for a fresh one`,
+      detail: `Taken on ${formatDate(lastBackupAt)}. Anything entered since then only exists in the database.`,
+    };
+  }
+  return {
+    tone: "bg-green-50 border-green-200 text-green-800",
+    icon: CheckCircle2,
+    title: `Last backup ${when}`,
+    detail: `Taken on ${formatDate(lastBackupAt)}.`,
+  };
+}
+
+export function BackupDownloads({ months, weeks, lastBackupAt }: BackupDownloadsProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const status = backupStatus(lastBackupAt);
 
   /** One download path for every button — fetch, blob, click, clean up. */
   async function download(key: string, url: string, filename: string) {
@@ -35,6 +81,8 @@ export function BackupDownloads({ months, weeks }: BackupDownloadsProps) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(objectUrl);
+      // The JSON route stamps lastBackupAt — re-render so the status reflects it.
+      if (key === "json") router.refresh();
     } catch {
       setError("Download failed. Please try again.");
     } finally {
@@ -46,6 +94,15 @@ export function BackupDownloads({ months, weeks }: BackupDownloadsProps) {
 
   return (
     <div className="space-y-4">
+      {/* Backup status — the real risk here is forgetting, so make it loud. */}
+      <div className={cn("flex items-start gap-3 rounded-xl border px-4 py-3", status.tone)}>
+        <status.icon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="font-semibold text-sm">{status.title}</p>
+          <p className="text-xs opacity-90 mt-0.5">{status.detail}</p>
+        </div>
+      </div>
+
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
           {error}
