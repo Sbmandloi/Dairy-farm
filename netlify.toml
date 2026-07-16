@@ -8,8 +8,18 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+# Security headers are also declared in next.config.ts (which covers routes
+# rendered by Next). These are the CDN-level copy and MUST stay in sync with it:
+# when the two disagree the browser sees conflicting values and takes the
+# stricter one.
+#
+# X-Frame-Options is SAMEORIGIN, not DENY, so the app can preview its own bill
+# PDFs in an iframe (/api/billing/[id]/pdf?inline=1). DENY blocks framing even
+# from our own origin and renders the preview blank. Cross-origin framing —
+# the actual clickjacking risk — is still blocked.
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options = "DENY"
+    X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
