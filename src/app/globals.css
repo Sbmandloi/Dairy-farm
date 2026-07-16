@@ -51,12 +51,25 @@ body {
 .stagger-3  { animation-delay: 0.15s; }
 .stagger-4  { animation-delay: 0.20s; }
 
-/* Loading skeleton */
-.skeleton {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-  border-radius: 6px;
+/* Loading skeleton — the single shimmer treatment used by <Skeleton/>.
+   Declared in the components layer (not unlayered) so Tailwind utilities can
+   still override it: unlayered CSS beats every layered utility in Tailwind v4,
+   which would make `rounded-full` on a skeleton render as a 6px square. */
+@layer components {
+  .skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+    border-radius: 6px;
+  }
+}
+
+/* Respect users who prefer reduced motion — hold a flat tone instead of shimmering. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: #eeeeee;
+  }
 }
 
 /* Safe area for mobile bottom nav */
