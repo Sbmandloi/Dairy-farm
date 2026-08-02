@@ -1,9 +1,8 @@
-import { prisma } from "@/lib/db";
-import { getSettings } from "@/lib/services/settings.service";
+import { getReportsData } from "@/lib/services/report.service";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatCurrency, formatLiters, formatDate, formatMonth, decimalToNumber } from "@/lib/utils/format";
+import { formatCurrency, formatLiters, formatDate, formatMonth } from "@/lib/utils/format";
 import Link from "next/link";
 import { BackupDownloads } from "@/components/reports/backup-downloads";
 import { cn } from "@/lib/utils";
@@ -22,62 +21,11 @@ import {
 export default async function ReportsPage() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-  // Reports exclude archived (soft-deleted) customers everywhere.
-  const liveCustomer = { customer: { deletedAt: null } };
-  const liveViaBill = { bill: { customer: { deletedAt: null } } };
-
-  // Last 12 months billing summary
-  const monthlySummary = await prisma.bill.groupBy({
-    by: ["periodStart"],
-    where: liveCustomer,
-    _sum: { totalAmount: true, totalLiters: true },
-    _count: true,
-    orderBy: { periodStart: "desc" },
-    take: 12,
-  });
-
-  // Recent payments
-  const recentPayments = await prisma.payment.findMany({
-    where: liveViaBill,
-    take: 20,
-    orderBy: { createdAt: "desc" },
-    include: { bill: { include: { customer: true } } },
-  });
-
-  // Current month top customers
-  const topCustomers = await prisma.dailyMilkEntry.groupBy({
-    by: ["customerId"],
-    where: { date: { gte: monthStart, lte: monthEnd }, ...liveCustomer },
-    _sum: { totalLiters: true },
-    orderBy: { _sum: { totalLiters: "desc" } },
-    take: 10,
-  });
-
-  const customerIds = topCustomers.map((c) => c.customerId);
-  const customers = await prisma.customer.findMany({ where: { id: { in: customerIds } } });
-  const customerMap = new Map(customers.map((c) => [c.id, c]));
-
-  // Overall stats
-  const totalAllTime = await prisma.bill.aggregate({
-    where: liveCustomer,
-    _sum: { totalAmount: true, totalLiters: true },
-    _count: true,
-  });
-
-  const totalPayments = await prisma.payment.aggregate({
-    where: liveViaBill,
-    _sum: { amountPaid: true },
-  });
-
-  // Drives the "last backup" status on the Backup tab.
-  const settings = await getSettings();
-
-  // Derived from the two aggregates already fetched — no extra query.
-  const allTimeOutstanding =
-    decimalToNumber(totalAllTime._sum.totalAmount) -
-    decimalToNumber(totalPayments._sum.amountPaid);
+  // Every figure below comes from one service, which the Android app reads too —
+  // so the web page and the phone can never disagree about the numbers.
+  const { allTime, monthlySummary, topCustomers, recentPayments, lastBackupAt } =
+    await getReportsData();
 
   // Build months list for backup tab
   const backupMonths = Array.from({ length: 12 }, (_, i) => {
@@ -133,34 +81,34 @@ export default async function ReportsPage() {
           {[
             {
               label: "Total Bills",
-              value: totalAllTime._count.toString(),
+              value: allTime.totalBills.toString(),
               icon: Receipt,
               tint: "bg-slate-50 border-slate-200 text-slate-500",
             },
             {
               label: "Total Liters",
-              value: formatLiters(decimalToNumber(totalAllTime._sum.totalLiters)),
+              value: formatLiters(allTime.totalLiters),
               icon: Droplets,
               tint: "bg-blue-50 border-blue-100 text-blue-500",
             },
             {
               label: "Total Billed",
-              value: formatCurrency(decimalToNumber(totalAllTime._sum.totalAmount)),
+              value: formatCurrency(allTime.totalBilled),
               icon: IndianRupee,
               tint: "bg-violet-50 border-violet-100 text-violet-500",
             },
             {
               label: "Total Collected",
-              value: formatCurrency(decimalToNumber(totalPayments._sum.amountPaid)),
+              value: formatCurrency(allTime.totalCollected),
               icon: CheckCircle2,
               tint: "bg-green-50 border-green-100 text-green-500",
             },
             {
               label: "Outstanding",
-              value: formatCurrency(allTimeOutstanding),
+              value: formatCurrency(allTime.outstanding),
               icon: AlertCircle,
               tint:
-                allTimeOutstanding > 0.01
+                allTime.outstanding > 0.01
                   ? "bg-orange-50 border-orange-100 text-orange-500"
                   : "bg-green-50 border-green-100 text-green-500",
             },
@@ -215,15 +163,15 @@ export default async function ReportsPage() {
                     </thead>
                     <tbody>
                       {monthlySummary.map((row) => (
-                        <tr key={row.periodStart.toISOString()} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                        <tr key={row.periodStart} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium text-gray-700">
-                            <Link href={`/billing?year=${row.periodStart.getFullYear()}&month=${row.periodStart.getMonth() + 1}`} className="hover:text-blue-600">
+                            <Link href={`/billing?year=${row.year}&month=${row.month}`} className="hover:text-blue-600">
                               {formatMonth(row.periodStart)}
                             </Link>
                           </td>
-                          <td className="px-4 py-3 text-right text-gray-600">{row._count}</td>
-                          <td className="px-4 py-3 text-right text-gray-600">{formatLiters(decimalToNumber(row._sum.totalLiters))}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(decimalToNumber(row._sum.totalAmount))}</td>
+                          <td className="px-4 py-3 text-right text-gray-600">{row.bills}</td>
+                          <td className="px-4 py-3 text-right text-gray-600">{formatLiters(row.liters)}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(row.amount)}</td>
                         </tr>
                       ))}
                       {monthlySummary.length === 0 && (
@@ -259,7 +207,6 @@ export default async function ReportsPage() {
                     </thead>
                     <tbody>
                       {topCustomers.map((row, i) => {
-                        const customer = customerMap.get(row.customerId);
                         // Medal colours for the top three, plain otherwise.
                         const rankTint =
                           i === 0
@@ -278,11 +225,11 @@ export default async function ReportsPage() {
                             </td>
                             <td className="px-4 py-3">
                               <Link href={`/customers/${row.customerId}`} className="font-medium text-gray-900 hover:text-blue-600">
-                                {customer?.name || "Unknown"}
+                                {row.name}
                               </Link>
                             </td>
                             <td className="px-4 py-3 text-right font-semibold text-blue-600">
-                              {formatLiters(decimalToNumber(row._sum.totalLiters))}
+                              {formatLiters(row.liters)}
                             </td>
                           </tr>
                         );
@@ -321,14 +268,14 @@ export default async function ReportsPage() {
                     <tbody>
                       {recentPayments.map((p) => (
                         <tr key={p.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-gray-900">{p.bill.customer.name}</td>
+                          <td className="px-4 py-3 font-medium text-gray-900">{p.customerName}</td>
                           <td className="px-4 py-3 text-gray-500">
                             <Link href={`/billing/${p.billId}`} className="hover:text-blue-600">
-                              {p.bill.invoiceNumber}
+                              {p.invoiceNumber}
                             </Link>
                           </td>
                           <td className="px-4 py-3 text-right font-semibold text-green-600">
-                            {formatCurrency(decimalToNumber(p.amountPaid))}
+                            {formatCurrency(p.amount)}
                           </td>
                           <td className="px-4 py-3 text-right text-gray-500">{formatDate(p.paidOn)}</td>
                         </tr>
@@ -352,7 +299,7 @@ export default async function ReportsPage() {
             <BackupDownloads
               months={backupMonths}
               weeks={backupWeeks}
-              lastBackupAt={settings.lastBackupAt ? settings.lastBackupAt.toISOString() : null}
+              lastBackupAt={lastBackupAt}
             />
           </TabsContent>
         </Tabs>

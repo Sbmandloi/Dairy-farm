@@ -13,6 +13,14 @@ export default auth((req) => {
     return;
   }
 
+  // The mobile API authenticates with a bearer token, not the NextAuth cookie,
+  // so this cookie-based check would reject every request from the Android app.
+  // These routes are NOT public: each one is wrapped in withAuth(), which
+  // verifies the token and loads the user before any handler runs.
+  if (pathname.startsWith("/api/mobile")) {
+    return;
+  }
+
   // Allow the login page
   if (pathname === "/login" || pathname.startsWith("/login/")) {
     return;

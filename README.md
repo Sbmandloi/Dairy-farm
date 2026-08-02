@@ -2,6 +2,11 @@
 
 A full-stack Next.js 16 application for managing dairy milk delivery, billing, and WhatsApp PDF invoicing.
 
+There is also a **native Android app** in [`mobile/`](./mobile), built on React
+Native. It talks to this server over `/api/mobile/*` and reuses every service in
+`src/lib/services/` — no business logic is duplicated. See
+[`mobile/README.md`](./mobile/README.md) for setup and APK builds.
+
 ## Features
 
 - **Daily Milk Entry** — Mobile-optimized grid with morning/evening split or single-entry mode. Quick-add buttons, copy-from-previous-day, bulk save.

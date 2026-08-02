@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The Android app is a separate React Native project with its own toolchain;
+    // linting it with the Next.js config produces only false positives.
+    "mobile/**",
   ]),
 ]);
 

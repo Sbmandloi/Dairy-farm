@@ -46,6 +46,19 @@ export async function getBillById(id: string) {
   });
 }
 
+/**
+ * A month's run is one aggregate plus one upsert per customer, and every NEW
+ * bill additionally calls generateInvoiceNumber, which scans the year's
+ * invoices. Against a remote database (Neon in production) that comfortably
+ * exceeds Prisma's 5s default interactive-transaction deadline once a dairy has
+ * more than a handful of customers — and the whole batch is then rolled back
+ * part-way through, so no bills are generated at all.
+ *
+ * Only the deadline changes; the work and its ordering are untouched. Still
+ * bounded, so a genuinely stuck run cannot hold a connection open forever.
+ */
+const GENERATE_BILLS_TX = { timeout: 120_000, maxWait: 15_000 } as const;
+
 export async function generateBillsForPeriod(
   periodStart: Date,
   periodEnd: Date,
@@ -117,7 +130,7 @@ export async function generateBillsForPeriod(
       bills.push(bill);
     }
     return bills;
-  });
+  }, GENERATE_BILLS_TX);
 }
 
 export async function markBillPaid(billId: string, amountPaid: number, paidOn: Date, note?: string) {

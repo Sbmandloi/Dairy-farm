@@ -46,3 +46,6 @@ next-env.d.ts
 
 # local PDF storage (not needed — PDFs are generated on-demand)
 /storage
+
+# database backups — contain password hashes and WhatsApp tokens
+/backups
