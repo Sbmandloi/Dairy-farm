@@ -75,11 +75,23 @@ The app is useless until the server it talks to serves `/api/mobile/*`. Those
 routes were added to the parent Next.js project and must be deployed before the
 APK will do anything except fail to sign in.
 
-**Check whether they are live:**
+There are **two** deployed sites, each with its own database and its own
+`AUTH_SECRET`. Deploy and check both.
+
+| | URL | Database |
+|---|---|---|
+| **PROD** | `https://starlit-biscuit-dbe6ae.netlify.app` | production — the client's real data |
+| **DEV** | `https://beautiful-sprite-a18e5b.netlify.app` | development — safe to experiment |
+
+**Check whether the routes are live:**
 
 ```bash
-curl -s -X POST https://beautiful-sprite-a18e5b.netlify.app/api/mobile/auth/login \
-  -H 'Content-Type: application/json' -d '{"email":"x@y.z","password":"probe123"}'
+for site in starlit-biscuit-dbe6ae beautiful-sprite-a18e5b; do
+  echo -n "$site: "
+  curl -s -X POST "https://$site.netlify.app/api/mobile/auth/login" \
+    -H 'Content-Type: application/json' -d '{"email":"x@y.z","password":"probe123"}'
+  echo
+done
 ```
 
 | Response | Meaning |
@@ -105,11 +117,20 @@ website; the mobile layer adds none, but it *depends* on two:
 
 ## Building the APK
 
-> **The release APK is built against `https://beautiful-sprite-a18e5b.netlify.app`.**
-> It will show "Invalid email or password" on every login attempt until the
-> `/api/mobile/*` routes are **deployed to that site** — they exist only in the
-> working tree until you merge and let Netlify build. See
-> [Deploying the backend](#deploying-the-backend-first) below.
+> **Two builds are kept in `dist/`, and they are not interchangeable.** The
+> server URL is compiled in, so a build cannot be repointed after the fact.
+>
+> | File | Talks to | Use for |
+> |---|---|---|
+> | `dairy-billing-PRODUCTION.apk` | `starlit-biscuit-dbe6ae` | **the client** — real data |
+> | `dairy-billing-DEV.apk` | `beautiful-sprite-a18e5b` | your own testing |
+>
+> Test with the DEV build. Every write it makes lands in the development
+> database, where a mistake costs nothing.
+>
+> After any build, run `npm run verify:apk` — it reads the URL back out of the
+> APK, so you can prove which one you are holding rather than trusting the
+> filename.
 
 ### Prerequisites
 
