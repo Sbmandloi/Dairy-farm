@@ -52,4 +52,8 @@ yarn-error.*
 
 # Release signing keystore — must never be committed. See README.
 /keystores/
-mobile/.claude/
+
+# Editor/assistant tooling config, not project configuration.
+# Patterns here are relative to mobile/, so this is ".claude/", not
+# "mobile/.claude/" — the latter would only ever match mobile/mobile/.claude/.
+/.claude/
